@@ -9,9 +9,9 @@ no TDR data for the following cruises: - EN661, AR63*, AR38, AR32, EN715, EN695
 
 CTD data available for: EN668 (no tdr) and EN706
 
-protocol
+# Protocol
 
-Pre-deployment
+## Pre-deployment
 - In SeaStar program, go to Wizards -> Connection wizard
 - Insert TDR into shuttle; double click the COM port that turns green;  follow prompts/instructions
 - First time, may need to go to “Program and Start Recorder”. Set measurement interval to 1 sec.
@@ -26,7 +26,7 @@ Pre-deployment
 
 TDR attached to Bongo frame
 
-Offloading
+## Offloading
 - Remove TDR by taking off the small bolt going through the wire loop, and remove from rubber sleeve
 - In SeaStar program, go to Wizards -> Connection Wizard
 - Insert TDR into shuttle, follow prompts/instructions- Click Yes when asked to retrieve recorder data
