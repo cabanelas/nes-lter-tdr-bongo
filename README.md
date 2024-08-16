@@ -5,7 +5,8 @@ zooplankton Bongo and/or ring net tows conducted during Northeast U.S. Shelf Lon
 
 TDR data available for the following cruises: EN706, EN687, EN657, EN655, EN649, EN617, AT46, AR77, EN644, EN627, EN608
 
-no TDR data for the following cruises: - EN661, AR63*, AR38, AR32, EN715, EN695
+no TDR data for the following cruises: - EN661, AR63*, AR38, AR32, EN695
+need to update EN715 does have TDR data
 
 CTD data available for: EN668 (no tdr) and EN706
 
