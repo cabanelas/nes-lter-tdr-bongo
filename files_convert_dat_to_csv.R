@@ -1,317 +1,198 @@
 ###############################################################
-#########         NES Bongo TDR files     #####################
-###############################################################
-## by: Alexandra Cabanelas
+##  NES-LTER Bongo TDR: Convert .DAT files to CSV
+##  Project: nes-lter-tdr-bongo
+##  Script:  files_convert_dat_to_csv.R
+##  Author:  Alexandra Cabanelas
+##  Purpose: Parse raw TDR .DAT files for cruises EN608, EN627,
+##           EN644; save individual cast CSVs and one combined
+##           per-cruise CSV to data/processed/
 ###############################################################
 # converting .DAT files to csv for TDR files that were never
 # saved as csv
-# cruises: EN627, EN644. EN608 
+## TDR == Time-Depth Recorder
 
 ## ------------------------------------------ ##
-#            Packages -----
+##  Packages                               ----
 ## ------------------------------------------ ##
 library(dplyr)
 library(here)
 
 ## ------------------------------------------ ##
-#            Data -----
+##  Helpers                                ----
 ## ------------------------------------------ ##
-# --- EN627 -----
-en627_folder <- here("raw","EN627_TDR")
 
-# list all .dat files in the directory
-dat_files <- list.files(path = en627_folder, pattern = "\\.dat$", 
-                        full.names = TRUE)
-
-# function to read a single .dat file, skipping metadata lines
+## --- Parse a single TDR .DAT file ---
+#' @param file  Full path to a .DAT file.
+#' @return      A df with cols:
+#             Index, DateTime, Temperature, Depth, cruise, station, cast
 read_dat_file <- function(file) {
-  # read the data, skipping the first 15 lines (adjust if necessary)
-  df <- read.table(file, skip = 15, sep = "\t", header = FALSE, stringsAsFactors = FALSE)
-  
-  # set the column names
+  df <- read.table(
+    file,
+    skip             = 15,
+    sep              = "\t",
+    header           = FALSE,
+    stringsAsFactors = FALSE
+  )
+
   colnames(df) <- c("Index", "DateTime", "Temperature", "Depth")
-  
-  # replace commas with dots and convert to numeric
+
   df$Temperature <- as.numeric(gsub(",", ".", df$Temperature))
-  df$Depth <- as.numeric(gsub(",", ".", df$Depth))
-  
-  # convert DateTime to POSIXct with milliseconds included
-  df$DateTime <- as.POSIXct(df$DateTime, format = "%d.%m.%Y %H:%M:%OS", tz = "UTC")
-  
-  # extract cruise, station, and cast information from the file name
-  file_name <- basename(file)
-  parts <- unlist(strsplit(file_name, "-"))
-  cruise <- parts[2]
-  station <- parts[3]
-  cast <- parts[4]
-  
-  # remove the .dat extension from cast
-  cast <- gsub("\\.dat$", "", cast)
-  
-  # add cruise, station, and cast columns
-  df$cruise <- cruise
-  df$station <- station
-  df$cast <- cast
-  
-  return(df)
+  df$Depth       <- as.numeric(gsub(",", ".", df$Depth))
+  df$DateTime    <- as.POSIXct(
+    df$DateTime,
+    format = "%d.%m.%Y %H:%M:%OS",
+    tz     = "UTC"
+  )
+
+  # filename: <cruise>-<station>-<cast>.<ext>
+  parts      <- strsplit(basename(file), "-", fixed = TRUE)[[1]]
+  df$cruise  <- parts[2]
+  df$station <- parts[3]
+  df$cast    <- gsub("\\.[^.]+$", "", parts[4])   # strip extension
+  df$file_stem <- gsub("\\.[^.]+$", "", basename(file)) 
+  df
 }
 
-# Read all .dat files and store them in a list
-dat_list <- lapply(dat_files, read_dat_file)
+## --- Strip leading zeros from station / cast labels ---
+# Converts L03 to L3, B07 to B7
+#' @param x  Character vector of station or cast codes
+#' @param prefix  The single-letter prefix "L" or "B"
+#' @return   Character vector with leading zeros removed
+strip_leading_zeros <- function(x, prefix) {
+  pattern     <- paste0("^", prefix, "0*")
+  replacement <- prefix
+  sub(pattern, replacement, x)
+}
 
-# Convert list of dfs into a single df
-combined_df <- do.call(rbind, dat_list)
+## --- Save individual cast CSVs + one combined CSV for a cruise ---
+# Individual files: data/processed/<cruise>_individual/
+# Combined file:  data/processed/<cruise>_allTDRcasts.csv
+#' @param combined_df  Data frame with all casts for one cruise.
+#' @param cruise_id    String used in output filenames, e.g. "EN627".
+save_cruise_outputs <- function(combined_df, cruise_id) {
+  # --- individual cast CSVs ---
+  indiv_dir <- here("data", "processed",
+                    paste0(cruise_id, "_individual"))
+  if (!dir.exists(indiv_dir)) dir.create(indiv_dir, recursive = TRUE)
 
-tail(combined_df)
+  # cast_ids <- unique(paste(combined_df$station, combined_df$cast, sep = "_"))
+  # 
+  # for (cast_id in cast_ids) {
+  #   parts   <- strsplit(cast_id, "_", fixed = TRUE)[[1]]
+  #   cast_df <- combined_df[
+  #     combined_df$station == parts[1] & combined_df$cast == parts[2], ]
+  # 
+  #   out_file <- file.path(
+  #     indiv_dir,
+  #     paste0(cruise_id, "_", cast_id, ".csv")
+  #   )
+  #   write.csv(cast_df, out_file, row.names = FALSE)
+  # }
+  # 
+  # message(sprintf("  Saved %d individual cast CSV(s) → %s",
+  #                 length(cast_ids), indiv_dir))
+  file_stems <- unique(combined_df$file_stem)
+  
+  for (stem in file_stems) {
+    cast_df  <- combined_df[combined_df$file_stem == stem, ]
+    out_file <- file.path(indiv_dir, paste0(stem, ".csv"))
+    write.csv(cast_df, out_file, row.names = FALSE)
+  }
+  
+  message(sprintf("  Saved %d individual cast CSV(s) → %s",
+                  length(file_stems), indiv_dir))
+  
+  # --- combined cruise CSV ---
+  proc_dir <- here("data", "processed")
+  if (!dir.exists(proc_dir)) dir.create(proc_dir, recursive = TRUE)
 
-#Issues with L2 and L3 being together in one TDR file
-# need to distinguish + separate the different casts
+  combined_file <- here("data", "processed",
+                        paste0(cruise_id, "_allTDRcasts.csv"))
+  write.csv(combined_df, combined_file, row.names = FALSE)
+  message(sprintf("  Saved combined CSV → %s", combined_file))
+}
+
+## ------------------------------------------ ##
+##             EN627       ----
+## ------------------------------------------ ##
+# NOTE: L02 & L03 casts together in same .DAT file. fixed here w timestamps
+
+message("Processing EN627 ...")
+
+en627_files <- list.files(
+  here("raw", "EN627_TDR"),
+  pattern   = "\\.dat$",
+  full.names = TRUE
+)
+
+en627_dat_list <- lapply(en627_files, read_dat_file)
+en627_combined <- do.call(rbind, en627_dat_list)
+
+# --- Split the merged L02&L03 cast ---
 #L02 B07 timestamp 02.02.2019 08:30:01,000 to 02.02.2019 08:37:01,000
 #L03 B08 timestamp 02.02.2019 10:43:01,000 to 02.02.2019 10:50:01,000
+start_L02 <- as.POSIXct("2019-02-02 08:30:01", tz = "UTC")
+end_L02   <- as.POSIXct("2019-02-02 08:37:01", tz = "UTC")
+start_L03 <- as.POSIXct("2019-02-02 10:43:01", tz = "UTC")
+end_L03   <- as.POSIXct("2019-02-02 10:50:01", tz = "UTC")
 
-# Function to split data frame based on timestamps
-split_data_by_timestamp <- function(df) {
-  # Define the start and end timestamps for the two measurements
-  start_L02_B07 <- as.POSIXct("2019-02-02 08:30:01.000", tz = "UTC")
-  end_L02_B07 <- as.POSIXct("2019-02-02 08:37:01.000", tz = "UTC")
-  start_L03_B08 <- as.POSIXct("2019-02-02 10:43:01.000", tz = "UTC")
-  end_L03_B08 <- as.POSIXct("2019-02-02 10:50:01.000", tz = "UTC")
-  
-  # Filter rows based on timestamps
-  df_L02_B07 <- df[df$DateTime >= start_L02_B07 & df$DateTime <= end_L02_B07, ]
-  df_L03_B08 <- df[df$DateTime >= start_L03_B08 & df$DateTime <= end_L03_B08, ]
-  
-  return(list(df_L02_B07, df_L03_B08))
-}
+en627_L02 <- en627_combined[
+  en627_combined$DateTime >= start_L02 &
+  en627_combined$DateTime <= end_L02, ]
+en627_L03 <- en627_combined[
+  en627_combined$DateTime >= start_L03 &
+  en627_combined$DateTime <= end_L03, ]
 
-split_dat_list <- lapply(dat_list, split_data_by_timestamp)
+# Fix station/cast labels on the split subsets
+en627_L02$station <- "L02"
+en627_L02$cast    <- "B07"
+en627_L02$file_stem <- "1$28C9447-EN627-L02-B07"  
 
-# Convert list of dataframes into a single dataframe
-combined_df_L02_B07 <- do.call(rbind, lapply(split_dat_list, `[[`, 1))
-combined_df_L03_B08 <- do.call(rbind, lapply(split_dat_list, `[[`, 2))
+en627_L03$station <- "L03"
+en627_L03$cast    <- "B08"
+en627_L03$file_stem <- "1$28C9447-EN627-L03-B08"
 
-# Replace station and cast names in combined_df_L02_B07
-combined_df_L02_B07$station <- gsub("&.*", "", combined_df_L02_B07$station)
-combined_df_L02_B07$cast <- gsub("&.*", "", combined_df_L02_B07$cast)
+# Rebuild: drop the merged row, add the two separated rows
+en627_combined <- en627_combined %>%
+  filter(station != "L02&03") %>%
+  bind_rows(en627_L02, en627_L03)
 
-# Replace station and cast names in combined_df_L03_B08
-combined_df_L03_B08$station <- "L03"
-combined_df_L03_B08$cast <- "B08"
+save_cruise_outputs(en627_combined, "EN627")
 
-# remove the merged file/casts from df and add them back separately 
-combined_df1 <- combined_df %>%
-  filter(station != "L02&03")
+## ------------------------------------------ ##
+##         EN644         ----
+## ------------------------------------------ ##
+message("Processing EN644 ...")
 
-# add L2 and L3 to entire df
-combined_df1 <- rbind(combined_df1, combined_df_L02_B07, combined_df_L03_B08)
+en644_files <- list.files(
+  here("raw", "EN644_TDR"),
+  pattern    = "\\.dat$",
+  full.names = TRUE
+)
 
-# FINAL COLUMNS
+en644_combined <- do.call(rbind, lapply(en644_files, read_dat_file))
 
-class(combined_df1$DateTime)
-#"POSIXct" "POSIXt" 
+en644_combined$station <- strip_leading_zeros(en644_combined$station, "L")
+en644_combined$cast    <- strip_leading_zeros(en644_combined$cast,    "B")
 
-########################
-#### to inspect data frames separately can ... 
+save_cruise_outputs(en644_combined, "EN644")
 
-file_names <- gsub("\\.dat$", "", basename(dat_files))
+## ------------------------------------------ ##
+##         EN608        ----
+## ------------------------------------------ ##
+# NOTE: EN608 files have a non-standard extension; list.files()
+#       uses full.names only (no pattern filter) to capture all files.
 
-# Assign each data frame to a variable named after the original file name
-for (i in seq_along(dat_list)) {
-  assign(file_names[i], dat_list[[i]])
-}
+message("Processing EN608 ...")
 
-# view one of the data frames by name
-print(file_names)  # see the variable names created
-head(get(file_names[1]))  # view the first few rows of the first data frame
+en608_files <- list.files(
+  here("raw", "EN608_TDR"),
+  full.names = TRUE
+)
 
-## save each as a csv so we have the non .dat file too
-# Loop through each dataframe and save it as a CSV file
-#for (i in seq_along(dat_list)) {
-  # Extract the dataframe and file name
-#  df <- dat_list[[i]]
-#  file_name <- file_names[i]
-  
-  # Define the file path
-#  file_path <- paste0(file_name, ".csv")
-  
-  # Save the dataframe as a CSV file
-#  write.csv(df, file = file_path, row.names = FALSE)
-#}
-# also save L2 and L3 separately 
-#write.csv(combined_df_L02_B07, "1$28C9447-EN627-L02-B07.csv")
-#write.csv(combined_df_L03_B08, "1$28C9447-EN627-L03-B08.csv")
+en608_combined <- do.call(rbind, lapply(en608_files, read_dat_file))
 
-# save all casts from that cruise to use in tdr_files_merge_v2.R
-#write.csv(combined_df1, "EN627_allTDRcasts.csv")
-################################################################################
-################################################################################
-################################################################################
-################################################################################
-################################################################################
-rm(list = ls())
+en608_combined$station <- strip_leading_zeros(en608_combined$station, "L")
+en608_combined$cast    <- strip_leading_zeros(en608_combined$cast,    "B")
 
-#    -----       EN644
-en644_folder <- here("raw","EN644_TDR")
-
-# List all .dat files in the directory
-dat_files <- list.files(path = en644_folder, pattern = "\\.dat$", full.names = TRUE)
-
-# Function to read a single .dat file, skipping metadata lines
-read_dat_file <- function(file) {
-  # Read the data, skipping the first 15 lines (adjust if necessary)
-  df <- read.table(file, skip = 15, sep = "\t", header = FALSE, stringsAsFactors = FALSE)
-  
-  # Manually set the column names
-  colnames(df) <- c("Index", "DateTime", "Temperature", "Depth")
-  
-  # Replace commas with dots and convert to numeric
-  df$Temperature <- as.numeric(gsub(",", ".", df$Temperature))
-  df$Depth <- as.numeric(gsub(",", ".", df$Depth))
-  
-  # Convert DateTime to POSIXct with milliseconds included
-  df$DateTime <- as.POSIXct(df$DateTime, format = "%d.%m.%Y %H:%M:%OS", tz = "UTC")
-  
-  # Extract cruise, station, and cast information from the file name
-  file_name <- basename(file)
-  parts <- unlist(strsplit(file_name, "-"))
-  cruise <- parts[2]
-  station <- parts[3]
-  cast <- parts[4]
-  
-  # Remove the .dat extension from cast
-  cast <- gsub("\\.dat$", "", cast)
-  
-  # Add cruise, station, and cast as new columns
-  df$cruise <- cruise
-  df$station <- station
-  df$cast <- cast
-  
-  return(df)
-}
-
-# Read all .dat files and store them in a list
-dat_list <- lapply(dat_files, read_dat_file)
-
-# Convert list of dataframes into a single dataframe
-combined_df <- do.call(rbind, dat_list)
-# Example to view the combined dataframe
-tail(combined_df)
-
-# Remove leading zeros from station column
-combined_df$station <- sub("^L0*", "L", combined_df$station)
-
-# Remove leading zeros from cast column
-combined_df$cast <- sub("^B0*", "B", combined_df$cast)
-
-## save each as a csv so we have the non .dat file too
-file_names <- gsub("\\.dat$", "", basename(dat_files))
-
-# Assign each data frame to a variable named after the original file name
-for (i in seq_along(dat_list)) {
-  assign(file_names[i], dat_list[[i]])
-}
-
-# view one of the data frames by name
-print(file_names)  # see the variable names created
-head(get(file_names[1]))
-
-# Loop through each dataframe and save it as a CSV file
-#for (i in seq_along(dat_list)) {
-# Extract the dataframe and file name
-#  df <- dat_list[[i]]
-#  file_name <- file_names[i]
-
-# Define the file path
-#  file_path <- paste0(file_name, ".csv")
-
-# Save the dataframe as a CSV file
-#  write.csv(df, file = file_path, row.names = FALSE)
-#}
-
-#write.csv(combined_df, "EN644_allTDRcasts.csv")
-################################################################################
-################################################################################
-################################################################################
-################################################################################
-################################################################################
-rm(list = ls())
-
-#    -----       EN608 broken file  
-en608_folder <- here("raw","EN608_TDR")
-
-# List all .dat files in the directory
-dat_files <- list.files(path = en608_folder, full.names = TRUE)
-
-# Function to read a single .dat file, skipping metadata lines
-read_dat_file <- function(file) {
-  # Read the data, skipping the first 15 lines (adjust if necessary)
-  df <- read.table(file, skip = 15, sep = "\t", header = FALSE, stringsAsFactors = FALSE)
-  
-  # Manually set the column names
-  colnames(df) <- c("Index", "DateTime", "Temperature", "Depth")
-  
-  # Replace commas with dots and convert to numeric
-  df$Temperature <- as.numeric(gsub(",", ".", df$Temperature))
-  df$Depth <- as.numeric(gsub(",", ".", df$Depth))
-  
-  # Convert DateTime to POSIXct with milliseconds included
-  df$DateTime <- as.POSIXct(df$DateTime, format = "%d.%m.%Y %H:%M:%OS", tz = "UTC")
-  
-  # Extract cruise, station, and cast information from the file name
-  file_name <- basename(file)
-  parts <- unlist(strsplit(file_name, "-"))
-  cruise <- parts[2]
-  station <- parts[3]
-  cast <- parts[4]
-  
-  # Remove the .dat extension from cast
-  cast <- gsub("\\.dat$", "", cast)
-  
-  # Add cruise, station, and cast as new columns
-  df$cruise <- cruise
-  df$station <- station
-  df$cast <- cast
-  
-  return(df)
-}
-
-# Read all .dat files and store them in a list
-dat_list <- lapply(dat_files, read_dat_file)
-
-# Convert list of dataframes into a single dataframe
-combined_df <- do.call(rbind, dat_list)
-# Example to view the combined dataframe
-tail(combined_df)
-
-# Remove leading zeros from station column
-combined_df$station <- sub("^L0*", "L", combined_df$station)
-
-# Remove leading zeros from cast column
-combined_df$cast <- sub("^B0*", "B", combined_df$cast)
-
-## save each as a csv so we have the non .dat file too
-file_names <- gsub("\\..*$", "", basename(dat_files))
-
-# Assign each data frame to a variable named after the original file name
-for (i in seq_along(dat_list)) {
-  assign(file_names[i], dat_list[[i]])
-}
-
-# view one of the data frames by name
-print(file_names)  # see the variable names created
-head(get(file_names[1]))
-
-# Loop through each dataframe and save it as a CSV file
-#for (i in seq_along(dat_list)) {
-# Extract the dataframe and file name
-#  df <- dat_list[[i]]
-#  file_name <- file_names[i]
-
-# Define the file path
-#  file_path <- paste0(file_name, ".csv")
-
-# Save the dataframe as a CSV file
-#  write.csv(df, file = file_path, row.names = FALSE)
-#}
-
-#write.csv(combined_df, "EN608_allTDRcasts.csv")
+save_cruise_outputs(en608_combined, "EN608")
