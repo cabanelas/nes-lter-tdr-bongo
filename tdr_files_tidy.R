@@ -510,7 +510,7 @@ all_data <- filter(all_data,
 # add depth_offset column.
 # Corrected depth = depth_m - offset_m 
 
-offsets <- read.csv(here("raw", "tdr_offsets.csv"),
+offsets <- read.csv(here("data", "raw", "tdr_offsets.csv"),
                     stringsAsFactors = FALSE) %>%
   mutate(across(c(cruise, station, cast), as.character))
 
