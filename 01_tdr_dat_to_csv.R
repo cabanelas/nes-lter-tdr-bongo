@@ -1,7 +1,7 @@
 ###############################################################
 ##  NES-LTER Bongo TDR: Convert .DAT files to CSV
 ##  Project: nes-lter-tdr-bongo
-##  Script:  files_convert_dat_to_csv.R
+##  Script:  01_tdr_dat_to_csv.R
 ##  Author:  Alexandra Cabanelas
 ##  Purpose: Parse raw TDR .DAT files for cruises EN608, EN627,
 ##           EN644; save individual cast CSVs and one combined
@@ -9,6 +9,7 @@
 ###############################################################
 # converting .DAT files to csv for TDR files that were never
 # saved as csv
+# saving csv files for cruises that only have .DAT and/or xlsx
 ## TDR == Time-Depth Recorder
 
 ## ------------------------------------------ ##
@@ -16,6 +17,8 @@
 ## ------------------------------------------ ##
 library(dplyr)
 library(here)
+library(readxl)
+library(openxlsx)
 
 ## ------------------------------------------ ##
 ##  Helpers                                ----
@@ -196,3 +199,68 @@ en608_combined$station <- strip_leading_zeros(en608_combined$station, "L")
 en608_combined$cast    <- strip_leading_zeros(en608_combined$cast,    "B")
 
 save_cruise_outputs(en608_combined, "EN608")
+
+## ------------------------------------------ ##
+##  Convert xlsx-only files to CSV        ----
+##  Runs automatically for any cruise folder
+##  where xlsx exists but no matching csv
+## ------------------------------------------ ##
+
+RAW_DIR <- here("data", "raw")
+SKIP_FILES <- "tdr_offsets.csv"
+
+message("\nChecking for xlsx files without matching CSV ...")
+
+all_xlsx <- list.files(RAW_DIR,
+                       pattern    = "\\.xlsx$",
+                       full.names = TRUE,
+                       recursive  = TRUE)
+
+# skip offsets file
+all_xlsx <- all_xlsx[!basename(all_xlsx) %in% SKIP_FILES]
+
+converted <- 0
+
+for (xlsx_path in all_xlsx) {
+  csv_path <- sub("\\.xlsx$", ".csv", xlsx_path)
+  
+  if (!file.exists(csv_path)) {
+    message(glue::glue("  Converting: {basename(xlsx_path)}"))
+    
+    # try readxl first
+    df <- tryCatch(
+      readxl::read_excel(xlsx_path),
+      error = function(e) {
+        # fall back to openxlsx for non-standard xlsx files (AR95, AR99 etc.)
+        tryCatch({
+          d <- openxlsx::read.xlsx(xlsx_path, sheet = "DAT")
+          # openxlsx returns date as Excel serial number — convert to POSIXct
+          date_col <- names(d)[grepl("date|time", names(d), 
+                                     ignore.case = TRUE)][1]
+          if (!is.na(date_col) && is.numeric(d[[date_col]])) {
+            d[[date_col]] <- as.POSIXct(
+              (as.numeric(d[[date_col]]) - 25569) * 86400,
+              origin = "1970-01-01", tz = "UTC"
+            )
+          }
+          d
+        },
+        error = function(e2) {
+          message(glue::glue("    ! Failed both readxl and openxlsx: {basename(xlsx_path)}"))
+          NULL
+        })
+      }
+    )
+    
+    if (!is.null(df) && nrow(df) > 0) {
+      write_csv(df, csv_path)
+      converted <- converted + 1
+    }
+  }
+}
+
+if (converted == 0) {
+  message("  All xlsx files already have matching CSV — nothing to convert.")
+} else {
+  message(glue::glue("  Converted {converted} xlsx file(s) to CSV."))
+}
