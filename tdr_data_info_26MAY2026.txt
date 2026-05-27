@@ -1,18 +1,17 @@
 TDR available:
-- EN608
-- EN687
-- EN657
-- EN655
-- EN649
-- EN644 only .dat
-- EN627 only .dat - but created csv in R 
-- EN617
 - EN608 broken files ish
+- EN617
+- EN627 only .dat - but created csv in R 
+- EN644 only .dat
+- EN649
+- EN655
+- EN657
 - AT46
+- EN687
+- HRS2303
 - AR77
 - EN712
 - EN715
-- HRS2303
 - EN720
 - AE2426
 - EN727

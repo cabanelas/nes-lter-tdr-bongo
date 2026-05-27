@@ -5,12 +5,12 @@
 ##  Author:  Alexandra Cabanelas
 ##  Purpose: Parse raw TDR .DAT files for cruises EN608, EN627,
 ##           EN644; save individual cast CSVs and one combined
-##           per-cruise CSV to data/processed/
+##           per-cruise CSV to data/raw/tdr_data
 ###############################################################
 # converting .DAT files to csv for TDR files that were never
-# saved as csv
+# saved as xlsx/csv
 # saving csv files for cruises that only have .DAT and/or xlsx
-## TDR == Time-Depth Recorder
+## TDR == Time-Depth Recorder Sea Star ODDI
 
 ## ------------------------------------------ ##
 ##  Packages                               ----
@@ -23,6 +23,7 @@ library(openxlsx)
 ## ------------------------------------------ ##
 ##  Helpers                                ----
 ## ------------------------------------------ ##
+TDR_DIR <- here("data", "raw", "tdr_data")
 
 ## --- Parse a single TDR .DAT file ---
 #' @param file  Full path to a .DAT file.
@@ -74,26 +75,13 @@ strip_leading_zeros <- function(x, prefix) {
 #' @param cruise_id    String used in output filenames, e.g. "EN627".
 save_cruise_outputs <- function(combined_df, cruise_id) {
   # --- individual cast CSVs ---
-  indiv_dir <- here("data", "processed",
-                    paste0(cruise_id, "_individual"))
-  if (!dir.exists(indiv_dir)) dir.create(indiv_dir, recursive = TRUE)
+  indiv_dir <- here("data", "raw", "tdr_data", paste0(cruise_id, "_TDR"))
+  
+  if (!dir.exists(indiv_dir)) {
+    stop("TDR folder not found: ", indiv_dir, 
+         "\nCreate the folder first or check cruise_id spelling.")
+  }
 
-  # cast_ids <- unique(paste(combined_df$station, combined_df$cast, sep = "_"))
-  # 
-  # for (cast_id in cast_ids) {
-  #   parts   <- strsplit(cast_id, "_", fixed = TRUE)[[1]]
-  #   cast_df <- combined_df[
-  #     combined_df$station == parts[1] & combined_df$cast == parts[2], ]
-  # 
-  #   out_file <- file.path(
-  #     indiv_dir,
-  #     paste0(cruise_id, "_", cast_id, ".csv")
-  #   )
-  #   write.csv(cast_df, out_file, row.names = FALSE)
-  # }
-  # 
-  # message(sprintf("  Saved %d individual cast CSV(s) → %s",
-  #                 length(cast_ids), indiv_dir))
   file_stems <- unique(combined_df$file_stem)
   
   for (stem in file_stems) {
@@ -106,13 +94,13 @@ save_cruise_outputs <- function(combined_df, cruise_id) {
                   length(file_stems), indiv_dir))
   
   # --- combined cruise CSV ---
-  proc_dir <- here("data", "processed")
-  if (!dir.exists(proc_dir)) dir.create(proc_dir, recursive = TRUE)
-
-  combined_file <- here("data", "processed",
-                        paste0(cruise_id, "_allTDRcasts.csv"))
-  write.csv(combined_df, combined_file, row.names = FALSE)
-  message(sprintf("  Saved combined CSV → %s", combined_file))
+  # proc_dir <- here("data", "processed")
+  # if (!dir.exists(proc_dir)) dir.create(proc_dir, recursive = TRUE)
+  # 
+  # combined_file <- here("data", "processed",
+  #                       paste0(cruise_id, "_allTDRcasts.csv"))
+  # write.csv(combined_df, combined_file, row.names = FALSE)
+  # message(sprintf("  Saved combined CSV → %s", combined_file))
 }
 
 ## ------------------------------------------ ##
@@ -123,7 +111,7 @@ save_cruise_outputs <- function(combined_df, cruise_id) {
 message("Processing EN627 ...")
 
 en627_files <- list.files(
-  here("raw", "EN627_TDR"),
+  file.path(TDR_DIR, "EN627_TDR"),
   pattern   = "\\.dat$",
   full.names = TRUE
 )
@@ -168,7 +156,7 @@ save_cruise_outputs(en627_combined, "EN627")
 message("Processing EN644 ...")
 
 en644_files <- list.files(
-  here("raw", "EN644_TDR"),
+  file.path(TDR_DIR, "EN644_TDR"),
   pattern    = "\\.dat$",
   full.names = TRUE
 )
@@ -189,7 +177,7 @@ save_cruise_outputs(en644_combined, "EN644")
 message("Processing EN608 ...")
 
 en608_files <- list.files(
-  here("raw", "EN608_TDR"),
+  file.path(TDR_DIR, "EN608_TDR"),
   full.names = TRUE
 )
 
