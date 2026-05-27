@@ -31,7 +31,8 @@
 # 2022 = AT46, EN687
 # 2023 = HRS2303, EN706, AR77
 # 2024 = EN712, EN715, EN720, AE2426
-# 2025 = EN727, AR88, AR92, **need to add AR95**
+# 2025 = EN727, AR88, AR92, AR95
+# 2026 = AR99, ***need to add HRS2601***
 ## ------------------------------------------ ##
 
 # .DAT files only, csv created in a separate R script: EN644, EN627, EN608
@@ -51,7 +52,7 @@ library(lubridate)
 ##  Constants              ----
 ## ------------------------------------------ ##
 
-RAW_DIR    <- here("raw")
+RAW_DIR    <- here("data", "raw")
 OUT_DIR    <- here("data", "processed")
 SKIP_FILES <- "tdr_offsets.csv"  # excluded from read
 
@@ -148,11 +149,16 @@ read_tdr_csv <- function(file_path) {
     if (old_nm %in% colnames(df)) df <- rename(df, !!new_nm := !!old_nm)
   }
   
+  if ("Date.&amp;.Time" %in% colnames(df)) {
+    df <- rename(df, date_time = `Date.&amp;.Time`)
+  }
+  
   df %>%
     mutate(
       cruise  = toupper(meta$cruise),
       station = meta$station,
-      cast    = meta$cast
+      cast    = meta$cast,
+      date_time = as.character(date_time) 
     ) %>%
     select(any_of(c("date_time", "temp_C", "depth_m",
                     "cruise", "station", "cast")))
@@ -401,6 +407,16 @@ for (cr in sort(unique(all_data$cruise))) {
 
 dev.off()
 
+## ---------------------- ##
+# multiple casts - need to manually inspect
+# AE2426 = L8 B13; L9 B12 (messed up like it started after net was in water)
+# AR77 = L02 B02
+# AT46 = L5 B3 = maybe?
+# EN617 = L11B25ab = i think tdr calibration
+# EN657 = L03 B02; L6B17; L9
+# EN706 = L05B06
+# EN715 = L5B6; L6B13; L8B14
+
 ## ------------------------------------------ ##
 ##  3. Parse timestamps & clean labels  ----
 ## ------------------------------------------ ##
@@ -408,14 +424,17 @@ dev.off()
 all_data <- all_data %>%
   mutate(
     # handle both character timestamps and Excel serial-date numerics
+    # after forcing as.character() in read_tdr_csv, numeric serials come in
+    # as strings like "45603.2" — detect with regex before parsing
     date_time = case_when(
-      is.numeric(date_time) ~
+      grepl("^\\d{5}\\.?\\d*$", date_time) ~
         as.POSIXct((as.numeric(date_time) - 25569) * 86400,
                    origin = "1970-01-01", tz = "UTC"),
       TRUE ~
         parse_date_time(as.character(date_time),
-                        orders = c("dmY HMS", "Ymd HMS", "mdY IMS p"),
-                        tz     = "UTC")
+                        orders = c("dmY HMS", "Ymd HMS", "mdY IMS p",
+                                   "Ymd HM", "Ymd"),
+                        tz = "UTC")
     ),
     # station: add L prefix where missing, strip leading zeros
     station = case_when(
@@ -430,13 +449,13 @@ all_data <- all_data %>%
     cast = ifelse(!grepl("^B", cast, ignore.case = TRUE),
                   paste0("B", cast), cast)
   ) %>%
-  filter(!is.na(depth_m),    depth_m >= 0,  # remove pre-deploy / air rows
+  filter(!is.na(depth_m),    depth_m >= 0,
          !is.na(date_time))
 
 # should be 0
 sum(is.na(all_data$date_time))
 
-# date range should make sense
+# date range should make sense — check all cruises present
 range(all_data$date_time, na.rm = TRUE)
 
 all_data %>%
@@ -510,6 +529,9 @@ all_data <- filter(all_data,
 # add depth_offset column.
 # Corrected depth = depth_m - offset_m 
 
+### NEED TO CHECK AND ADD OFFSETS TO CRUISES 
+# AR77; EN712, EN715, EN720, AE2426; EN727, AR88, AR92, AR95; AR99
+
 offsets <- read.csv(here("data", "raw", "tdr_offsets.csv"),
                     stringsAsFactors = FALSE) %>%
   mutate(across(c(cruise, station, cast), as.character))
@@ -573,6 +595,12 @@ if (n_split > 0) {
 #       date_time <= as.POSIXct("YYYY-MM-DD HH:MM:SS", tz = "UTC") ~ "BXXa",
 #     TRUE ~ cast
 #   ))
+
+
+
+
+
+
 
 ## ------------------------------------------ ##
 ##  8. Label downcast / upcast        ----
@@ -699,7 +727,7 @@ for (cr in sort(unique(all_data$cruise))) {
     filter(cruise == cr) %>%
     mutate(label = paste(station, cast)) %>%
     ggplot(aes(x = date_time, y = depth_m, color = down_up)) +
-    geom_point(size = 0.15, alpha = 0.6) +
+    geom_point(size = 0.3, alpha = 0.6) +
     scale_y_reverse() +
     scale_color_manual(
       values = c(predeploy = "grey70",
@@ -718,6 +746,177 @@ for (cr in sort(unique(all_data$cruise))) {
 }
 
 dev.off()
+
+## ---------------------- ##
+# multiple casts - need to manually inspect
+# AE2426 = L8 B13 FIXED; L9 B12 correctly identified upcast
+#        = L1B1 & L4B18 = have a not-connected bit early on (surface time) that is still part of the cast (should be deleted)
+
+# AR77 = L02 B02 = these may be two separate casts that i may need to manually split; need to check
+#        L5B5 = did we accidentally collect data longer interval than 1sec??
+
+# AR88 = L5B5 = have a not-connected bit early on (surface time) that is still part of the cast (should be deleted)
+
+# AR92 = u9a B18 = have a not-connected bit early on (surface time) that is still part of the cast (should be deleted)
+
+# AT46 = all casts have long predeploy sections that should be excluded/deleted
+#      = L2B21; L3B22; L4B2; L5B3; L6B4; L7B14; L9B12; MVCO B23 = all have upcast data that keeps going well past net being on surface/back on deck
+
+# EN649 = pretty much all casts have upcast that keep going past net being back on deck and a couple have downcast before net was deployed
+
+# EN655 = same issue with many keeping upcast points well past net being on deck
+
+# EN657 = same issue with many keeping upcast points well past net being on deck
+#       = L03 B02 have quick cast and then a deeper one - two casts in this one file - may need to manually check??
+#       = L6B17 maybe two casts by accident need to manually check; L9 same issue
+
+# EN687 = L9B12 too few data points; did we accidentally set record to higher interval
+#       = the rest are good except that some have downcast or upcast while net was on deck
+
+# EN706 = L05B06 = need to manually check; maybe two casts on same file?
+
+# EN715 = L5B6; L6B13; L8B14 = manually chec; maybe two casts on same file? 
+#       = L2B2 has downcast values not connected to rest of cast; before net went in water
+#
+
+# HRS2303 = L1B2; L6B9; L7B4; L8B5; L9B6; MVCO B1 = too few data points; did we accidentally set record to higher interval
+
+
+### WHERE TO PUT THE MANUAL CORRECTIONS
+## ------------------------------------------ ##
+##  7. Cruise-specific manual corrections  ----
+## ------------------------------------------ ##
+# get start and end times of each cast
+
+## ------------------------------------------ ##
+##  3b. Trim TDR data to tow start/end times ----
+##      Uses tow_meta start/end UTC timestamps
+##      Removes pre-deploy noise and post-recovery tail
+## ------------------------------------------ ##
+
+BUFFER_SECS <- 120  # 2 min buffer on each end
+
+tow_meta <- read_csv(here("data", 
+                          "nes-lter-zooplankton-tow-metadata-v2.csv"),
+                     show_col_types = FALSE)
+
+tow_windows <- tow_meta %>%
+  mutate(cruise = toupper(cruise)) %>%
+  filter(!is.na(date_start_UTC), !is.na(time_start_UTC),
+         !is.na(date_end_UTC),   !is.na(time_end_UTC)) %>%
+  mutate(
+    tow_start = as.POSIXct(
+      paste(date_start_UTC, format(time_start_UTC, "%H:%M:%S")),
+      format = "%d-%m-%y %H:%M:%S", tz = "UTC"
+    ),
+    tow_end = as.POSIXct(
+      paste(date_end_UTC, format(time_end_UTC, "%H:%M:%S")),
+      format = "%d-%m-%y %H:%M:%S", tz = "UTC"
+    )
+  ) %>%
+  filter(!is.na(tow_start), !is.na(tow_end)) %>%
+  select(cruise, station, cast, tow_start, tow_end)
+
+message(glue::glue("Tow windows available: {nrow(tow_windows)} cruise × station"))
+
+# which TDR cruises have tow_meta coverage?
+trimmed_cruises  <- intersect(unique(all_data$cruise), unique(tow_windows$cruise))
+untrimmed_cruises <- setdiff(unique(all_data$cruise), unique(tow_windows$cruise))
+message(glue::glue("Cruises with tow windows:    {paste(sort(trimmed_cruises),  collapse = ', ')}"))
+message(glue::glue("Cruises WITHOUT tow windows: {paste(sort(untrimmed_cruises), collapse = ', ')}"))
+
+# NEED TO ADD TIMESTAMPS FOR NEWER CRUISES NOT IN THE METADATA FILE PACKAGE
+# Cruises WITHOUT METADATA/TIME: AE2426, AR88, AR92, AR95, AR99, EN727
+
+n_before <- nrow(all_data)
+
+# strip B prefix from TDR cast to match tow_meta numeric cast
+# "B1" -> "1", "B21" -> "21"
+all_data <- all_data %>%
+  mutate(cast_num = gsub("^B", "", cast)) %>%
+  left_join(tow_windows, by = c("cruise", "station", "cast_num" = "cast")) %>%
+  mutate(
+    keep = is.na(tow_start) |
+      (date_time >= tow_start - BUFFER_SECS &
+         date_time <= tow_end   + BUFFER_SECS)
+  ) %>%
+  filter(keep) %>%
+  select(-tow_start, -tow_end, -keep, -cast_num)
+
+n_after <- nrow(all_data)
+message(glue::glue("Rows removed by tow window trim: {n_before - n_after}"))
+message(glue::glue("Rows remaining: {n_after}"))
+
+
+
+
+## --- Category 1: trim upcast tail by timestamp ---
+## These casts have real data recorded after net was back on deck
+## Use event log or bongo log times to set hard cutoffs
+
+upcast_cutoffs <- tribble(
+  ~cruise,   ~station, ~cast,   ~cutoff_utc,
+  # AT46 — all casts run long; add cutoffs from event log
+  # EN649 — most casts run long
+  # template:
+  # "EN657",  "L3",    "B2",  "2020-10-15 14:30:00"
+)
+
+# apply cutoffs — remove rows after net back on deck
+if (nrow(upcast_cutoffs) > 0) {
+  upcast_cutoffs <- upcast_cutoffs %>%
+    mutate(cutoff_utc = as.POSIXct(cutoff_utc, tz = "UTC"))
+  
+  all_data <- all_data %>%
+    left_join(upcast_cutoffs, by = c("cruise", "station", "cast")) %>%
+    filter(is.na(cutoff_utc) | date_time <= cutoff_utc) %>%
+    select(-cutoff_utc)
+}
+
+## --- Category 2: manual cast splits by timestamp ---
+## For files with 2 casts, define the time boundary
+
+# EN617 L11 B25ab
+en617_L11_B25a_end   <- as.POSIXct("2018-07-25 08:50:00", tz = "UTC")
+en617_L11_B25b_start <- as.POSIXct("2018-07-25 09:16:00", tz = "UTC")
+
+all_data <- all_data %>%
+  mutate(cast = case_when(
+    cruise == "EN617" & station == "L11" & cast == "B25ab" &
+      date_time <= en617_L11_B25a_end   ~ "B25a",
+    cruise == "EN617" & station == "L11" & cast == "B25ab" &
+      date_time >= en617_L11_B25b_start ~ "B25b",
+    cruise == "EN617" & station == "L11" & cast == "B25ab" ~ NA_character_,
+    TRUE ~ cast
+  )) %>%
+  filter(!is.na(cast))
+
+# Add more splits here following same pattern:
+# all_data <- all_data %>%
+#   mutate(cast = case_when(
+#     cruise == "EN706" & station == "L5" & cast == "B6" &
+#       date_time <= as.POSIXct("YYYY-MM-DD HH:MM:SS", tz="UTC") ~ "B6a",
+#     ...
+#   ))
+
+## --- Category 3: flag sparse casts ---
+sparse_casts <- all_data %>%
+  count(cruise, station, cast) %>%
+  filter(n < 50) %>%  # fewer than 50 obs = likely high interval recording
+  mutate(flag_sparse = TRUE)
+
+message(nrow(sparse_casts), " sparse cast(s):")
+print(sparse_casts)
+
+# don't remove yet — just flag for now and revisit
+all_data <- all_data %>%
+  left_join(sparse_casts %>% select(cruise, station, cast, flag_sparse),
+            by = c("cruise", "station", "cast")) %>%
+  mutate(flag_sparse = replace_na(flag_sparse, FALSE))
+
+
+
+
 
 ## ------------------------------------------ ##
 ##  8d. Bin to 1-m depth intervals  ----
