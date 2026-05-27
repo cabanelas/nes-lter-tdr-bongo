@@ -18,6 +18,8 @@ TDR available:
 - EN727
 - AR88
 - AR92
+- AR95
+- AR99
 
 No TDR:
 - EN661 - i dont think they used TDR during this cruise - it does say recorded on sheets... so idk...
@@ -39,3 +41,5 @@ Ring net only:
 - AR39B
 - AR61B
 - AR66B
+
+PX sensor available for:
