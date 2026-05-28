@@ -10,6 +10,8 @@
 ##  Input:  data/processed/tdr_ctd_tests.csv (created in 02)
 ##           data/raw/tdr_offsets.csv  
 
+# need to get CTD max depth from api and cross ref with elog
+# check what if any offset is needed then apply offsets to tdr data
 
 ## ------------------------------------------ ##
 ##  5. Join depth offsets                  ----
