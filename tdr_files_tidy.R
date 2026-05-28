@@ -639,7 +639,7 @@ all_data <- filter(all_data,
                        cast %in% c("B25a", "B25ab")))
 
 ## ------------------------------------------ ##
-##  5? Fix/Validate TDR timestamps          ----
+##  5. Fix/Validate TDR timestamps          ----
 ## ------------------------------------------ ##
 
 # elog data fixed and created in nes-lter-api-pulls.Rproj
@@ -685,27 +685,17 @@ timestamp_check %>%
          tdr_end, elog_recover, offset_recover_min) %>%
   print(n = Inf, width = Inf)
 
-##### DOUBLE CHECK AND ADJUST TIMES
-# fix
-# cruises with systematic clock offsets to correct
-clock_offsets <- tribble(
-  ~cruise,   ~offset_hrs,
-  "EN712",   5,        # ~300 min
-  "EN715",   4,        # ~240 min
-  "EN720",   4,        # ~240 min
-  "EN706",   4,        # manually checked
-  "HRS2303", 4.5       # ~270 min avg -- also check
-)
-
-all_data <- all_data %>%
-  left_join(clock_offsets, by = "cruise") %>%
-  mutate(
-    date_time = case_when(
-      !is.na(offset_hrs) ~ date_time + hours(offset_hrs),
-      TRUE ~ date_time
-    )
+timestamp_check %>%
+  group_by(cruise) %>%
+  summarise(
+    n_casts = n(),
+    n_flag_large_offset  = sum(flag_large_offset, na.rm = TRUE),
+    n_flag_no_elog       = sum(flag_no_elog),
+    median_deploy_offset = median(offset_deploy_min, na.rm = TRUE),
+    sd_deploy_offset     = sd(offset_deploy_min, na.rm = TRUE),
+    .groups = "drop"
   ) %>%
-  select(-offset_hrs)
+  arrange(desc(abs(median_deploy_offset)))
 
 timestamp_check %>%
   filter(flag_no_elog, !grepl("_\\d+$", cast)) %>%
@@ -713,6 +703,47 @@ timestamp_check %>%
   arrange(cruise, station, cast)
 # EN655 = L9B15 hit bottom = no sample = tdr cast but no sample
 # EN712  = L6B5 hit bottom = no sample = tdr cast but no sample
+
+# =============================================================================
+# TIMESTAMP CORRECTION NOTES
+# Based on timestamp_check output - TDR local time vs UTC offset review
+# offset_deploy_min = tdr_start - elog_deploy (negative = TDR clock behind elog/UTC)
+# =============================================================================
+
+# --- CRUISE-LEVEL TIMEZONE CORRECTIONS NEEDED ---
+# These cruises show consistent ~same offset across all casts (both deploy AND
+# recover negative by similar magnitude) TDR computer was in local time (EDT = UTC-4
+# or EST = UTC-5). Fix by adding hours to tdr datetime column for these cruises.
+
+# cruises with systematic clock offsets to correct
+clock_offsets <- tribble(
+  ~cruise,   ~offset_hrs,
+  "EN706",   4, # manually checked
+  "EN712",   5, # manually checked
+  "EN715",   4, # manually checked
+  "EN720",   4  # manually checked
+)
+
+# stations on HRS2303 that are already in correct time (no adjustment needed)
+hrs2303_good_stations <- c("L3", "L4", "L6")
+
+# manually checked; L6, L4, L3,  time are good
+# apply bulk cruise-level corrections + exceptions
+all_data <- all_data %>%
+  mutate(date_time = case_when(
+    # bulk cruise-level tz corrections
+    cruise %in% clock_offsets$cruise ~
+      date_time + hours(clock_offsets$offset_hrs[match(cruise, clock_offsets$cruise)]),
+    # HRS2303: all stations except the good ones need +4 hrs
+    cruise == "HRS2303" & !station %in% hrs2303_good_stations ~ date_time + hours(4),
+    # one-off cast correction ## EN617 L1B1 needs 3 hr adjustment
+    cruise == "EN617" & station == "L1" & cast == "B1" ~ date_time + hours(3),
+    TRUE ~ date_time
+  ))
+
+# MANUALLY CHECKED TIMESTAMP against all-nes-lter-bongologs EN608, EN617,
+# EN627, EN644, EN649, EN655, EN657, AT46, EN687, HRS2303, EN706, AR77,
+# EN712, EN715, EN720, AE2426, EN727, AR88, AR92, AR95, AR99 
 
 ## ------------------------------------------ ##
 ##  6. Split merged multi-cast files       ----
@@ -806,13 +837,11 @@ ggplotly(p, tooltip = "text")
 # 1st tow = 2026-01-14 05:08-05:17 == L2B3
 # 2nd tow = 2026-01-14 05:43-05:54 == L2R3 (ring net done separate; update cast name)
 
-## TDR times are really off for EN706 and EN715 need to check times again bongo sheet and/or elog
-
-
 
 
 
 ## --- auto split in step 6 ---
+# -- need to manually identify whether second cast is aborted or a different staiton
 all_data %>%
   filter(grepl("_\\d+$", cast)) %>%
   group_by(cruise, station, cast) %>%
