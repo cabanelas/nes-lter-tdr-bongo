@@ -1267,7 +1267,7 @@ for (cr in sort(unique(tdr_trim$cruise))) {
 # average temp within each 1-m bin per cast x down_up
 # drop upcast rows shallower than 2 m (surface tail noise)
 
-tdr_binned <- bin_by_depth(all_data)
+tdr_binned <- bin_by_depth(tdr_trim)
 
 message("Binned rows: ", nrow(tdr_binned))
 message("Depth bins range: ", min(tdr_binned$depth_bin), " – ",
@@ -1381,8 +1381,25 @@ tdr_binned %>%
 ## ------------------------------------------ ##
 ##  11. ADD COMMENTS !!                    ----
 ## ------------------------------------------ ##
-
-
+# add notes which messed up 
+# 2019 = EN627 = two casts L8B19 = first one hit bottom and redid cast
+# 2020 = EN655 = L9B15 has tdr cast but no sample hit bottom no time to re-do
+# 2020 = EN657 = 3 with multiple casts L3B2 (this contains L1 cast); L9B8 (L9B14,L8B15)
+# 2022 = AT46  = no TDR for L8B13
+# 2023 = EN706   = L5B6 re-did deployment; so delete first aborted cast
+# 2024 = EN712  = L6B5 hit bottom = no sample = tdr cast but no sample
+# 2024 = EN715  = L5B6 = hit bottom and re-did cast; delete first bad cast
+# 2024 = AE2426 = L9B12 upcast only 
+# 2025 = AR95  = L3B19 TDR turned on after net in water
+# 2026 = AR99  = L2B3 = the second cast is a ring net only at same L2R3
+#              = L10B6 = TDR turned on after net in water
+# AR99 = L2B3  = the second cast is a ring net only at same L2R3
+#      = L6B10 = the second cast is a ring net only at same L2R3
+#      = L9B5  = the second cast is a ring net only at same L2R3
+# EN617 L1B1 deleted bad tdr data
+# AT46  = L5B3 = maybe? not two casts but has mini spike after main cast
+# EN617 = L11B25ab = flowmeter calibration
+## --- flag sparse casts --- not set to record every sec may need to do this before binning 
 
 
 ## ------------------------------------------ ##
@@ -1450,21 +1467,6 @@ message("\nDone.")
 #     TRUE ~ down_up
 #   ))
 
-## --- flag sparse casts ---
-sparse_casts <- all_data %>%
-  count(cruise, station, cast) %>%
-  filter(n < 50) %>%  # fewer than 50 obs = likely high interval recording
-  mutate(flag_sparse = TRUE)
-
-message(nrow(sparse_casts), " sparse cast(s):")
-print(sparse_casts)
-
-# don't remove yet — just flag for now and revisit
-all_data <- all_data %>%
-  left_join(sparse_casts %>% select(cruise, station, cast, flag_sparse),
-            by = c("cruise", "station", "cast")) %>%
-  mutate(flag_sparse = replace_na(flag_sparse, FALSE))
-
 # EN617 L11 B25ab
 # en617_L11_B25a_end   <- as.POSIXct("2018-07-25 08:50:00", tz = "UTC")
 # en617_L11_B25b_start <- as.POSIXct("2018-07-25 09:16:00", tz = "UTC")
@@ -1511,43 +1513,3 @@ all_data <- all_data %>%
 #       = L2B2 has downcast values not connected to rest of cast; before net went in water
 #
 # HRS2303 = L1B2; L6B9; L7B4; L8B5; L9B6; MVCO B1 = too few data points; did we accidentally set record to higher interval
-# DELETE THIS CAST
-# delete bad cast
-all_data <- all_data %>%
-  filter(!(cruise == "EN617" & station == "L1" & cast == "B1"))
-
-# add notes which messed up 
-# 2019 = EN627 = two casts L8B19 = first one hit bottom and redid cast
-# 2020 = EN655 = L9B15 has tdr cast but no sample hit bottom no time to re-do
-# 2020 = EN657 = 3 with multiple casts L3B2 (this contains L1 cast); L9B8 (L9B14,L8B15)
-# 2022 = AT46  = no TDR for L8B13
-# 2023 = EN706   = L5B6 re-did deployment; so delete first aborted cast
-# 2024 = EN712  = L6B5 hit bottom = no sample = tdr cast but no sample
-# 2024 = EN715  = L5B6 = hit bottom and re-did cast; delete first bad cast
-# 2024 = AE2426 = L9B12 upcast only 
-# 2025 = AR95  = L3B19 TDR turned on after net in water
-# 2026 = AR99  = L2B3 = the second cast is a ring net only at same L2R3
-#              = L10B6 = TDR turned on after net in water
-# includes the following cruises (21): 
-# 2018 = EN608, EN617
-# 2019 = EN627, EN644
-# 2020 = EN649, EN655, EN657
-# 2021 = 
-# 2022 = AT46, EN687
-# 2023 = HRS2303, EN706, AR77
-# 2024 = EN712, EN715, EN720, AE2426
-# 2025 = EN727, AR88, AR92, AR95
-# 2026 = AR99
-# EN617 = L11B25ab = flowmeter calibration
-# EN627 = L8B19 = re-did deployment; so delete first aborted cast
-# EN657 = L3B2 (this contains L1 file); L6B17; L9B8 (L9B14,L8B15)
-# AT46  = L5B3 = maybe? not two casts but has mini spike after main cast
-# EN706 = L5B6 = re-did deployment; so delete first aborted cast
-# AR77  = L2B2 = re-did deployment; so delete first aborted cast
-# EN715 = L5B6 = re-did deployment; so delete first aborted cast
-#       = L6B13 = re-did deployment; so delete first aborted cast
-#       = L8B14 = re-did deployment; so delete first aborted cast
-# AE2426 = L8B13 = up/downs before actual cast
-# AR99 = L2B3  = the second cast is a ring net only at same L2R3
-#      = L6B10 = the second cast is a ring net only at same L2R3
-#      = L9B5  = the second cast is a ring net only at same L2R3
