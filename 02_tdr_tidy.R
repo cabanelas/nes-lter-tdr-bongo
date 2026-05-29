@@ -1,7 +1,7 @@
 ###############################################################
 ##  NES-LTER Bongo TDR: Merge & Process All Cruises
 ##  Project: nes-lter-tdr-bongo
-##  Script:  tdr_files_tidy.R
+##  Script:  02_tdr_tidy.R
 ##  Author:  Alexandra Cabanelas
 ##
 ##  Purpose: Read per cast CSV files from all cruise TDR folders,
