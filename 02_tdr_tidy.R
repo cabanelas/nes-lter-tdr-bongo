@@ -1400,7 +1400,19 @@ tdr_binned %>%
 # AT46  = L5B3 = maybe? not two casts but has mini spike after main cast
 # EN617 = L11B25ab = flowmeter calibration
 ## --- flag sparse casts --- not set to record every sec may need to do this before binning 
+# check recording interval per cast
+all_data %>%
+  group_by(cruise, station, cast) %>%
+  arrange(date_time) %>%
+  summarise(
+    median_interval_sec = median(as.numeric(diff(date_time)), na.rm = TRUE),
+    n_obs               = n(),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(median_interval_sec)) %>%
+  print(n = 330)
 
+# need to check ones with few obs as well 
 
 ## ------------------------------------------ ##
 ##  12. Cast QC summary                    ----
