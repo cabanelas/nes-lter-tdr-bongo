@@ -12,7 +12,9 @@
 
 # need to get CTD max depth from api and cross ref with elog
 # check what if any offset is needed then apply offsets to tdr data
-
+#### NEED TO FIND WHICH HAVE THESE AND FIND CTD MAX DEPTH FOR EACH OF THESE TOWS
+#### NEED TO ADD CAST AND STATION TO SOME OF THESE
+#### DOING THIS WILL GIVE OFFSETS FOR ANY OF THESE
 ## ------------------------------------------ ##
 ##  5. Join depth offsets                  ----
 ## ------------------------------------------ ##
@@ -80,7 +82,21 @@ safe_read_csv <- function(url) {
     }
   )
 }
-
+all_data %>%
+  group_by(cruise, station, cast) %>%
+  summarise(
+    min_depth = min(depth_m, na.rm = TRUE),
+    max_depth = max(depth_m, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  group_by(cruise) %>%
+  summarise(
+    median_min_depth = median(min_depth, na.rm = TRUE),
+    max_min_depth    = max(min_depth, na.rm = TRUE),
+    median_max_depth = median(max_depth, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(max_min_depth))
 ## ------------------------------------------ ##
 ##  1. Load TDR-CTD test data               ----
 ## ------------------------------------------ ##
