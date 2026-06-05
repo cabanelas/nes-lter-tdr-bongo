@@ -13,7 +13,9 @@
 ##  Input:   data/raw/tdr_data/<CRUISE>_TDR/*.csv   (one CSV per bongo tow)
 ##           data/raw/elog_zoop_tows_thruAR99_2026-04-14.csv
 ##                    from nes-lter-api-pulls.Rproj; 01_elog_pull.R
-##
+##           data/raw/all-nes-lter-bongologs-20260526.csv
+##                    from nes-lter-tow-meta-v3.Rproj; 01_merge_bongo_logs.R
+##                          
 ##  Output:  data/processed/<CRUISE>_tdr_processed.csv  (per cruise)
 ##           data/processed/allTDRdata.csv              (combined)
 ##           data/processed/tdr_cast_qc_summary.csv     (QC table)
@@ -51,259 +53,24 @@
 ## ------------------------------------------ ##
 library(tidyverse)
 library(here)
-library(readr)
-library(lubridate)
+library(zoo)      # for rollmean in auto_split_casts
+library(glue)     # for glue() in detect_and_split plots
+library(conflicted)
+
+## Run sessionInfo() and save output to document package versions:
+## > writeLines(capture.output(sessionInfo()), "session_info.txt")
+
+source(here("R", "00_helpers.R"))
+
+conflicts_prefer(dplyr::filter)
+conflicts_prefer(dplyr::lag)
+conflicts_prefer(dplyr::select)
 
 ## ------------------------------------------ ##
 ##  Constants              ----
 ## ------------------------------------------ ##
-
 RAW_DIR    <- here("data", "raw", "tdr_data")
 OUT_DIR    <- here("data", "processed")
-
-## ------------------------------------------ ##
-##  Helpers                                ----
-## ------------------------------------------ ##
-
-## --- Parse cruise / station / cast from a TDR CSV filename ---
-# handles 2 naming convensions:
-#   AE2426:  <serial>_<CRUISE>_<station>_<cast>.csv
-#   EN617:   <serial>-<CRUISE>-<station>-<cast>.csv
-#' @param file_name  Bare filename
-#' @return  Named list: cruise, station, cast
-#          Returns NAs with a warning when pattern cannot be matched.
-parse_filename_meta <- function(file_name) {
-  stem  <- tools::file_path_sans_ext(file_name)
-  parts <- unlist(strsplit(stem, "[-_]"))
-  
-  if (length(parts) < 4) {
-    warning("Cannot parse metadata from filename: ", file_name)
-    return(list(cruise  = NA_character_,
-                station = NA_character_,
-                cast    = NA_character_))
-  }
-  
-  list(cruise  = parts[2],
-       station = parts[3],
-       cast    = parts[4])
-}
-
-## --- Strip leading zeros after a single-letter prefix ---
-# L03 -> L3, B07 -> B7, L11 unchanged
-strip_leading_zeros <- function(x, prefix) {
-  sub(paste0("^", prefix, "0*"), prefix, x)
-}
-
-## --- Coalesce the two temperature column name variants ---
-# Some files export "Temp°C" UTF-8, others "Temp¡C" due to encoding
-#  Merge into one clean column
-coalesce_temp_col <- function(df) {
-  col_utf <- "Temp(\u00b0C)"   # degrees C  (UTF-8)
-  col_bad <- "Temp(\u00a1C)"   # inverted ! (bad encoded)
-  
-  has_utf <- col_utf %in% colnames(df)
-  has_bad <- col_bad %in% colnames(df)
-  
-  if (has_utf && has_bad) {
-    df[[col_utf]] <- coalesce(df[[col_utf]], df[[col_bad]])
-    df <- select(df, -all_of(col_bad))
-  } else if (has_bad && !has_utf) {
-    df <- rename(df, !!col_utf := !!col_bad)
-  }
-  df
-}
-
-## --- Read one TDR CSV and standardize its columns ---
-#' @param file_path  Full path to the CSV
-#' @return  Tidy data frame with cols:
-#          date_time, temp_C, depth_m, cruise, station, cast
-#          Returns NULL on read error
-read_tdr_csv <- function(file_path) {
-  file_name <- basename(file_path)
-  meta      <- parse_filename_meta(file_name)
-  
-  enc <- tryCatch(
-    guess_encoding(file_path)$encoding[1],
-    error = function(e) "UTF-8"
-  )
-  
-  df <- tryCatch(
-    read_csv(file_path,
-             locale         = locale(encoding = enc),
-             show_col_types = FALSE),
-    error = function(e) {
-      message("  ! Error reading: ", file_name, " — ", conditionMessage(e))
-      return(NULL)
-    }
-  )
-  
-  if (is.null(df) || nrow(df) == 0) return(NULL)
-  
-  df <- coalesce_temp_col(df)
-  
-  rename_map <- list(
-    date_time = c("Date & Time", "DateTime", "Date.&.Time", "Date.&amp;.Time"),
-    temp_C    = c("Temp(\u00b0C)", "Temperature"),
-    depth_m   = c("Depth(m)", "Depth")
-  )
-  for (new_nm in names(rename_map)) {
-    matched <- rename_map[[new_nm]][rename_map[[new_nm]] %in% colnames(df)]
-    if (length(matched) > 0 && !new_nm %in% colnames(df))
-      df <- rename(df, !!new_nm := !!matched[1])
-  }
-  
-  if (!"date_time" %in% colnames(df)) {
-    warning("No date_time col in: ", file_name,
-            "\n  cols: ", paste(colnames(df), collapse = ", "))
-    return(NULL)
-  }
-  
-  df %>%
-    mutate(
-      cruise    = toupper(meta$cruise),
-      station   = meta$station,
-      cast      = meta$cast,
-      date_time = as.character(date_time)
-    ) %>%
-    select(any_of(c("date_time", "temp_C", "depth_m",
-                    "cruise", "station", "cast")))
-}
-
-## --- Find first local depth peak (robust to second tow being deeper) ---
-find_first_peak <- function(depths, min_depth = 15) {
-  n        <- length(depths)
-  smoothed <- zoo::rollmean(depths, k = 11, fill = "extend")
-  above_min <- which(smoothed > min_depth)
-  if (length(above_min) == 0) return(which.max(depths))
-  for (i in above_min) {
-    lookahead <- min(i + 10, n)
-    if (smoothed[lookahead] < smoothed[i]) return(i)
-  }
-  return(which.max(depths))
-}
-
-## --- Auto-split a data frame containing multiple casts ---
-# Detects two casts by finding a shallow valley between two deeper excursions.
-# valley must be < valley_ratio * first peak depth, and second peak > min_peak_depth
-#' @param df            Data frame for one (cruise, station, cast)
-#' @param base_cast     Original cast label e.g. "B25"
-#' @param min_peak_depth Minimum depth (m) to consider a real tow
-#' @param valley_ratio  Valley must be shallower than this fraction of first peak
-#' @return df with cast relabelled to B25_1, B25_2 if split triggered,
-#'         otherwise cast unchanged
-auto_split_casts <- function(df, base_cast, min_peak_depth = 15, valley_ratio = 0.25) {
-  df <- arrange(df, date_time)
-  n  <- nrow(df)
-  
-  first_peak_idx   <- find_first_peak(df$depth_m, min_peak_depth)
-  first_peak_depth <- df$depth_m[first_peak_idx]
-  
-  if (first_peak_depth < min_peak_depth) {
-    df$cast <- base_cast
-    return(df)
-  }
-  
-  after_peak <- (first_peak_idx + 1):n
-  if (length(after_peak) < 10) {
-    df$cast <- base_cast
-    return(df)
-  }
-  
-  valley_idx   <- first_peak_idx + which.min(df$depth_m[after_peak])
-  valley_depth <- df$depth_m[valley_idx]
-  
-  after_valley <- (valley_idx + 1):n
-  if (length(after_valley) < 10) {
-    df$cast <- base_cast
-    return(df)
-  }
-  
-  second_peak_depth <- max(df$depth_m[after_valley], na.rm = TRUE)
-  
-  valley_is_shallow <- valley_depth < (first_peak_depth * valley_ratio)
-  second_is_real    <- second_peak_depth > min_peak_depth
-  
-  if (valley_is_shallow & second_is_real) {
-    df$cast[1:valley_idx]       <- paste0(base_cast, "_1")
-    df$cast[(valley_idx + 1):n] <- paste0(base_cast, "_2")
-  } else {
-    df$cast <- base_cast
-  }
-  
-  df
-}
-
-## --- Detect and split a multi cast group ---
-# Wrapper around auto_split_casts() that prints a VERIFY message when a split occurs
-#' @param df        Data frame for one (cruise, station, cast) group
-#' @param base_cast Original cast label
-#' @return df with cast relabelled if a split was triggered
-detect_and_split <- function(df, base_cast) {
-  df <- auto_split_casts(df, base_cast)
-  
-  if (any(grepl("_\\d+$", df$cast))) {
-    second_peak <- max(df$depth_m[grepl("_2$", df$cast)], na.rm = TRUE)
-    message(sprintf(
-      "  AUTO-SPLIT: cruise=%-8s station=%-6s cast=%-8s (2nd excursion: %.0f m) — VERIFY",
-      df$cruise[1], df$station[1], base_cast, second_peak))
-  }
-  
-  df
-}
-
-## --- Label downcast / upcast rows within a single tow ---
-# Rows up to and including the depth maximum = "downcast";
-# all rows after = "upcast"
-#' @param df  Data frame for one cast, sorted by date_time
-#' @return  df with new column `down_up`
-label_down_up <- function(df) {
-  df       <- arrange(df, date_time)
-  peak_idx <- which.max(df$depth_m)
-  
-  # find where the cast actually starts descending
-  # first row where depth exceeds 1 m heading toward the peak
-  descent_start <- which(df$depth_m > 1)[1]
-  if (is.na(descent_start)) descent_start <- 1L
-  
-  df$down_up <- case_when(
-    seq_len(nrow(df)) < descent_start   ~ "predeploy",
-    seq_len(nrow(df)) <= peak_idx       ~ "downcast",
-    TRUE                                ~ "upcast"
-  )
-  df
-}
-
-## --- Bin to 1-m depth intervals and average temperature ---
-#' @param df  Data frame with depth_m, temp_C, down_up, date_time,
-#'            and grouping cols cruise / station / cast
-#' @return  One row per cruise x station x cast x down_up x depth_bin
-# bin_by_depth <- function(df) {
-#   df %>%
-#     mutate(depth_bin = floor(depth_m)) %>%
-#     group_by(cruise, station, cast, down_up, depth_bin) %>%
-#     summarise(
-#       avg_temp_C = mean(temp_C,     na.rm = TRUE),
-#       date_time  = median(date_time, na.rm = TRUE),
-#       n_obs      = n(),
-#       .groups    = "drop"
-#     )
-# }
-bin_by_depth <- function(df) {
-  df %>%
-    filter(down_up != "predeploy") %>%
-    # for upcast: only keep rows that are still meaningfully deep
-    # drop the trailing surface tail (upcast rows within 2 m of surface)
-    filter(!(down_up == "upcast" & depth_m < 2)) %>%
-    mutate(depth_bin = floor(depth_m)) %>%
-    group_by(cruise, station, cast, down_up, depth_bin) %>%
-    summarise(
-      avg_temp_C = mean(temp_C,      na.rm = TRUE),
-      date_time  = median(date_time, na.rm = TRUE),
-      n_obs      = n(),
-      .groups    = "drop"
-    ) %>%
-    arrange(cruise, station, cast, date_time)
-}
 
 ## ------------------------------------------ ##
 ##  1. CSV files                  ----
@@ -405,10 +172,12 @@ all_data <- all_data %>%
         as.POSIXct((as.numeric(date_time) - 25569) * 86400,
                    origin = "1970-01-01", tz = "UTC"),
       TRUE ~
+        suppressWarnings(
         parse_date_time(as.character(date_time),
                         orders = c("dmY HMS", "Ymd HMS", "mdY IMS p",
                                    "Ymd HM", "Ymd"),
                         tz = "UTC")
+        )
     ),
     # station: add L prefix where missing, strip leading zeros
     station = case_when(
@@ -424,7 +193,7 @@ all_data <- all_data %>%
     cast = ifelse(!grepl("^B", cast, ignore.case = TRUE),
                   paste0("B", cast), cast)
   ) %>%
-  filter(!is.na(depth_m),    depth_m >= 0,
+  filter(!is.na(depth_m), depth_m >= 0, 
          !is.na(date_time))
 # checked warnings and not an issue
 
@@ -481,6 +250,7 @@ gap_diagnostics %>%
   select(cruise, station, cast, elapsed, time_gap_to_next, depth_m) %>%
   arrange(desc(time_gap_to_next)) %>%
   print(n = 30)
+rm(gap_diagnostics)
 
 # --- depth profile plots per cruise ----
 pdf(here("figures", "raw_profiles_check.pdf"),
@@ -491,9 +261,9 @@ for (cr in sort(unique(all_data$cruise))) {
     filter(cruise == cr) %>%
     mutate(label = paste(station, cast)) %>%
     ggplot(aes(x = date_time, y = depth_m)) +
-    geom_line(linewidth = 0.2, color = "steelblue", alpha = 0.7) +
+    geom_line(linewidth = 0.3, color = "steelblue", alpha = 0.7) +
     scale_y_reverse() +
-    facet_wrap(~label, scales = "free_x") +
+    facet_wrap(~label, scales = "free") +
     labs(title = paste("RAW profiles —", cr),
          x = NULL, y = "Depth (m)") +
     theme_minimal() +
@@ -503,6 +273,7 @@ for (cr in sort(unique(all_data$cruise))) {
 }
 
 dev.off()
+rm(p)
 
 all_data %>%
   distinct(cruise, station, cast) %>%
@@ -530,6 +301,7 @@ all_data %>%
 # 2018 = EN608 = no duplicates;
 #              = missing data for L6B12; L11B19; L10B21: L9B22; L7B23; MVCO B30
 # 2018 = EN617 = no duplicates; L11B25a and L11B25ab tow calib
+#              = no TDR for L1B1
 
 # 2019 = EN627 = two casts L8B19 = first one hit bottom and redid cast
 # 2019 = EN644 = good; complete data
@@ -537,7 +309,10 @@ all_data %>%
 # 2020 = EN649 = good; complete data
 # 2020 = EN655 = good; complete data
 #              = L9B15 has tdr cast but no sample hit bottom no time to re-do
+#              = L3B3 TDR turned on after net in water (data starts at ~3m) 
 # 2020 = EN657 = 3 with multiple casts L3B2 (this contains L1 cast); L6B17; L9B8 (L9B14,L8B15)
+#              = L1B1 TDR turned on after net in water (data starts at ~4m) 
+#              = L4B6 TDR turned on after net in water (data starts at ~6m) 
 
 # 2021 = 
 
@@ -556,18 +331,18 @@ all_data %>%
 #               = L6B5 hit bottom = no sample = tdr cast but no sample
 # 2024 = EN715  = L5B6; L6B13; L8B14 = hit bottom and re-did cast; delete first bad cast
 # 2024 = EN720  = good; complete data
-# 2024 = AE2426 = L9B12 upcast only 
-#               = L8B13 funky stuff before start of actual cast\
+# 2024 = AE2426 = L9B12 upcast only (data starts at ~85m)
+#               = L8B13 funky stuff before start of actual cast
 #               = L11B9 = typo; should be L11B10
 
 # 2025 = EN727 = good; complete data
 # 2025 = AR88  = good; complete data
 # 2025 = AR92  = good; complete data
-# 2025 = AR95  = L3B19 TDR turned on after net in water
+# 2025 = AR95  = L3B19 TDR turned on after net in water (data starts at ~19m)
 
 # 2026 = AR99  = L2B3 = the second cast is a ring net only at same L2R3
 #              = L9B5 = the second cast is a ring net only at same L9R5
-#              = L10B6 = TDR turned on after net in water
+#              = L10B6 = TDR turned on after net in water (data starts at ~37m)
 #              = L6B10 = the second cast is a ring net only at same L6R10
 
 # 2026 = ***need to add HRS2601***
@@ -634,6 +409,7 @@ all_data <- filter(all_data,
                    station != "u9a",
                    !(cruise == "EN617" & station == "L11" & 
                        cast %in% c("B25a", "B25ab")))
+rm(tdr_test)
 
 ## ------------------------------------------ ##
 ##  5. Fix/Validate TDR timestamps          ----
@@ -738,7 +514,7 @@ maxdepth_check %>%
 # These cruises show consistent ~same offset across all casts (both deploy AND
 # recover negative by similar magnitude) TDR computer was in local time (EDT = UTC-4
 # or EST = UTC-5)
-# Fix by adding hours to tdr datetime column for these cruises.
+# Fix by adding hours to tdr datetime column for these cruises
 
 # cruises with systematic clock offsets to correct
 clock_offsets <- tribble(
@@ -786,19 +562,9 @@ timestamp_check_corrected <- tdr_times_corrected %>%
     flag_no_elog       = is.na(elog_deploy),
     flag_large_offset  = abs(offset_deploy_min) > 60,   # >1hr deploy offset = possible clock issue
   )
-
-# sanity check - should only show real remaining issues
-timestamp_check_corrected %>%
-  group_by(cruise) %>%
-  summarise(
-    n_casts              = n(),
-    n_flag_offset        = sum(flag_large_offset, na.rm = TRUE),
-    median_deploy_offset = median(offset_deploy_min, na.rm = TRUE),
-    sd_deploy_offset     = sd(offset_deploy_min, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  filter(n_flag_offset > 0) %>%
-  arrange(desc(abs(median_deploy_offset)))
+rm(elog, elog_wide, tdr_times, tdr_times_corrected, 
+   timestamp_check, timestamp_check_corrected, tdr_maxdepth, maxdepth_check,
+   clock_offsets, hrs2303_good_stations)
 
 ## ------------------------------------------ ##
 ##  6. Split merged multi-cast files       ----
@@ -825,10 +591,11 @@ n_split <- all_data %>%
 
 if (n_split > 0) {
   message("  ", n_split, " cast(s) were auto-split. ",
-          "Review VERIFY messages above")
+          "Review")
 } else {
   message("  No merged multi-cast files detected.")
 }
+rm(n_split)
 
 ## ------------------------------------------ ##
 ##  7. Manual corrections  ----
@@ -982,6 +749,8 @@ if (nrow(remaining_splits) == 0) {
   print(remaining_splits)
 }
 
+rm(split_casts, split_groups, plots, remaining_splits)
+
 ## ------------------------------------------ ##
 ##  7b. Manual corrections: missed auto-splits ----
 ## ------------------------------------------ ##
@@ -1019,12 +788,14 @@ p <- ggplot(missed_splits, aes(x = date_time, y = depth_m,
                                             "<br>depth:", round(depth_m, 1)))) +
   geom_point(size = 0.1, color = "steelblue", alpha = 0.5) +
   scale_y_reverse() +
-  facet_wrap(~label, scales = "free_x") +
+  facet_wrap(~label, scales = "free") +
   labs(x = NULL, y = "Depth (m)") +
   theme_minimal() +
   theme(axis.text.x = element_blank())
 
 ggplotly(p, tooltip = "text")
+
+rm(missed_splits, p)
 
 # -- EN627 = L8B19 --- re-did deployment; delete first aborted cast
 # aborted tow = 2019-02-03 18:22-18:52 == DELETE
@@ -1138,7 +909,8 @@ all_data %>%
   ) %>%
   arrange(cruise, station, cast)
 
-conflicted::conflict_prefer("filter", "dplyr")
+# no double casts should remain
+
 for (cr in sort(unique(all_data$cruise))) {
   p <- all_data %>%
     filter(cruise == cr) %>%
@@ -1146,7 +918,7 @@ for (cr in sort(unique(all_data$cruise))) {
     ggplot(aes(x = date_time, y = depth_m)) +
     geom_line(linewidth = 0.2, color = "steelblue", alpha = 0.7) +
     scale_y_reverse() +
-    facet_wrap(~label, scales = "free_x") +
+    facet_wrap(~label, scales = "free") +
     labs(title = paste("RAW profiles —", cr),
          x = NULL, y = "Depth (m)") +
     theme_minimal() +
@@ -1154,6 +926,8 @@ for (cr in sort(unique(all_data$cruise))) {
           strip.text   = element_text(size = 6))
   print(p)
 }
+rm(en627_L8_B19_split, en657_L3_B2_split, en657_L9_B14_split, en706_L5_B6_split,
+   en715_L5_B6_split, ae2426_L8_B13_split, ar99_L2_B3_split, p)
 
 ## ------------------------------------------ ##
 ##  8. Label downcast / upcast        ----
@@ -1166,34 +940,9 @@ for (cr in sort(unique(all_data$cruise))) {
 #   - rows to depth maximum      -> "downcast"
 #   - rows after depth maximum   -> "upcast"
 
-label_down_up <- function(df) {
-  df       <- arrange(df, date_time)
-  n        <- nrow(df)
-  peak_idx <- which.max(df$depth_m)
-  
-  # detect sustained descent: first row where depth increases > 0.5 m
-  # within the next 10 observations heading toward the peak
-  descent_start <- NA_integer_
-  for (i in seq_len(peak_idx - 1)) {
-    lookahead <- min(i + 10, peak_idx)
-    if (max(df$depth_m[i:lookahead]) - df$depth_m[i] > 0.5) {
-      descent_start <- i
-      break
-    }
-  }
-  if (is.na(descent_start)) descent_start <- 1L
-  
-  df$down_up <- case_when(
-    seq_len(n) < descent_start ~ "predeploy",
-    seq_len(n) <= peak_idx     ~ "downcast",
-    TRUE                       ~ "upcast"
-  )
-  df
-}
-
 all_data <- all_data %>%
   group_by(cruise, station, cast) %>%
-  do(label_down_up(.)) %>%
+  do(label_down_up(.)) %>% # function in 00_helpers.R
   ungroup()
 
 all_data %>%
@@ -1221,32 +970,29 @@ for (cr in sort(unique(all_data$cruise))) {
                  upcast    = "firebrick"),
       name = NULL
     ) +
-    facet_wrap(~label, scales = "free_x") +
+    facet_wrap(~label, scales = "free") +
     labs(title = paste("Labeled profiles —", cr),
          x = NULL, y = "Depth (m)") +
     theme_minimal() +
     theme(axis.text.x = element_blank(),
           strip.text  = element_text(size = 6),
-          legend.position = "bottom")
+          legend.position = "bottom") +
+    guides(color = guide_legend(override.aes = list(size = 4)))
   print(p)
 }
 
 dev.off()
+rm(p)
 
 ## ------------------------------------------ ##
 ##  8b. Manual down_up corrections         ----
 ## ------------------------------------------ ##
 # EN617 L1B1 = flat line? does the depth ever change? maybe bad cast?
-
-# quick interactive look at the flagged ones
 all_data %>%
-  filter(
-    (cruise == "EN617" & station == "L1"   & cast == "B1")
-  ) %>%
+  filter((cruise == "EN617" & station == "L1"   & cast == "B1")) %>%
   group_by(cruise, station, cast) %>%
   summarise(max_depth = max(depth_m), .groups = "drop") %>%
-  arrange(cruise, station, cast) %>%
-  print()
+  arrange(cruise, station, cast) 
 
 ## --- delete bad cast --- ##
 all_data <- all_data %>%
@@ -1255,44 +1001,149 @@ all_data <- all_data %>%
 ## ------------------------------------------ ##
 ##  9. Trim casts to elog deploy/recover times ----
 ## ------------------------------------------ ##
-# uses elog_wide from step 5 (already UTC-validated)
-# casts with no elog match pass through untrimmed
-# ring net casts (R*) won't have elog entries -> pass through untrimmed
+# first tried using the elog times to trim, but some discrepancies (time lags)
+# using times from bongo log sheets
 
-BUFFER_SECS <- 300  # 5min buffer on each side
+# created in nes-lter-tow-meta-v3.Rproj; 01_merge_bongo_logs.R
+meta <- read_csv(file.path("data", "raw",
+                           "all-nes-lter-bongologs-20260526.csv"))
+
+## ------------------------------------------ ##
+##  Parse logsheet times from meta ----
+## ------------------------------------------ ##
+
+meta_times <- meta %>%
+  select(cruise, station, cast, 
+         meta_deploy  = datetime_UTC_start, 
+         meta_recover = datetime_UTC_end)
+
+## --- coverage summary ---
+meta_times %>%
+  mutate(
+    has_deploy  = !is.na(meta_deploy),
+    has_recover = !is.na(meta_recover)
+  ) %>%
+  count(has_deploy, has_recover) %>%
+  arrange(desc(has_deploy), desc(has_recover))
+
+rm(meta)
+
+## ------------------------------------------ ##
+##  Manually fix some times based on logsheet ----
+## ------------------------------------------ ##
+# HRS2303
+#         L9 B6    = end should be 14:36
+#         L3 B11   = end should be 23:28
+# EN706
+#         L4 B5    = end should be 16:29
+#         L8 B15   = end should be 01:00
+#         L10 B10  = start should be 00:45 (wrong on physical logsheet too)
+# EN657
+#         L1 B1    = end should be 18:34
+#         L7 B19   = end should be 06:34
+# EN644
+#         L7 B8    = end should be 03:10 (wrong on physical logsheet too)
+#         L11 B 17 = end should be 03:33 (wrong on physical logsheet too)
+#         L4 B23   = end should be 05:01
+# EN617
+#         L2 B2    = start should be 22:11 
+#         L3 B5    = start should be 07:34
+#         L6 B12   = start should be 02:50
+#         L9 B17   = start should be 19:03
+# AT46
+#         L6 B6    = start should be 13:49
+# AE2426
+#         L1 B1    = start should be 17:12
+#         L2 B4    = end should be 09:27
+#
+meta_times <- meta_times %>%
+  mutate(
+    meta_deploy = case_when(
+      cruise == "EN706"  & station == "L10" & cast == "10" ~ ymd_hms("2023-08-10 00:45:00", tz = "UTC"),
+      cruise == "EN617"  & station == "L2"  & cast == "2"  ~ ymd_hms("2018-07-20 22:11:00", tz = "UTC"),
+      cruise == "EN617"  & station == "L3"  & cast == "5"  ~ ymd_hms("2018-07-21 07:34:00", tz = "UTC"),
+      cruise == "EN617"  & station == "L6"  & cast == "12" ~ ymd_hms("2018-07-22 02:50:00", tz = "UTC"),
+      cruise == "EN617"  & station == "L9"  & cast == "17" ~ ymd_hms("2018-07-22 19:03:00", tz = "UTC"),
+      cruise == "AT46"   & station == "L6"  & cast == "6"  ~ ymd_hms("2022-02-17 13:49:00", tz = "UTC"),
+      cruise == "AE2426" & station == "L1"  & cast == "1"  ~ ymd_hms("2024-11-06 17:12:00", tz = "UTC"),
+      TRUE ~ meta_deploy
+    ),
+    meta_recover = case_when(
+      cruise == "HRS2303" & station == "L9"  & cast == "6"  ~ ymd_hms("2023-05-03 14:36:00", tz = "UTC"),
+      cruise == "HRS2303" & station == "L3"  & cast == "11" ~ ymd_hms("2023-05-04 23:28:00", tz = "UTC"),
+      cruise == "EN706"   & station == "L4"  & cast == "5"  ~ ymd_hms("2023-08-08 16:29:00", tz = "UTC"),
+      cruise == "EN706"   & station == "L8"  & cast == "15" ~ ymd_hms("2023-08-11 01:00:00", tz = "UTC"),
+      cruise == "EN657"   & station == "L1"  & cast == "1"  ~ ymd_hms("2020-10-13 18:34:00", tz = "UTC"),
+      cruise == "EN657"   & station == "L7"  & cast == "19" ~ ymd_hms("2020-10-17 06:34:00", tz = "UTC"),
+      cruise == "EN644"   & station == "L7"  & cast == "8"  ~ ymd_hms("2019-08-22 03:10:00", tz = "UTC"),
+      cruise == "EN644"   & station == "L11" & cast == "17" ~ ymd_hms("2019-08-23 03:33:00", tz = "UTC"),
+      cruise == "EN644"   & station == "L4"  & cast == "23" ~ ymd_hms("2019-08-24 05:01:00", tz = "UTC"),
+      cruise == "AE2426"  & station == "L2"  & cast == "4"  ~ ymd_hms("2024-11-07 09:27:00", tz = "UTC"),
+      TRUE ~ meta_recover
+    )
+  )
+
+## ------------------------------------------ ##
+##  Which cruises / casts are missing times? ----
+## ------------------------------------------ ##
+
+meta_times %>%
+  summarise(
+    n_missing_deploy  = sum(is.na(meta_deploy)),
+    n_missing_recover = sum(is.na(meta_recover)),
+    .by = cruise
+  ) %>%
+  filter(n_missing_deploy > 0 | n_missing_recover > 0) %>%
+  arrange(cruise)
+
+## ------------------------------------------ ##
+##  9. Trim casts to logsheet deploy/recover times ----
+## ------------------------------------------ ##
+# casts with no meta_deploy pass through untrimmed (ring nets, missing logsheet times)
+# casts with deploy only: trim start, no end cut -> flag for manual review
+# casts with both: trim both ends
+
+BUFFER_SECS <- 180  # 3min buffer on each side
 
 tdr_trim <- all_data %>%
-  left_join(
-    elog_wide %>% select(cruise, station, cast, elog_deploy, elog_recover),
-    by = c("cruise", "station", "cast")
-  ) %>%
+  mutate(cast_join = str_remove(cast, "^[BR]")) %>%   # B1 -> 1, R19 -> 19
+  left_join(meta_times, by = c("cruise", "station", "cast_join" = "cast")) %>%
   filter(
-    is.na(elog_deploy) |                          # no elog at all: pass through
-      (is.na(elog_recover) &                      # deploy only: trim start, no end cut
-         date_time >= elog_deploy - BUFFER_SECS) |
-      (date_time >= elog_deploy  - BUFFER_SECS &  # both: trim both ends
-         date_time <= elog_recover + BUFFER_SECS)
+    is.na(meta_deploy) |
+      (is.na(meta_recover) &
+         date_time >= meta_deploy - BUFFER_SECS) |
+      (date_time >= meta_deploy  - BUFFER_SECS &
+         date_time <= meta_recover + BUFFER_SECS)
   ) %>%
-  select(-elog_deploy, -elog_recover)
+  select(-meta_deploy, -meta_recover, -cast_join)
 
-message("Rows after elog trim: ", nrow(tdr_trim))
+## --- flag casts that need manual review (deploy only, no recover time) ---
+cruises_with_tdr <- all_data %>%
+  distinct(cruise)
 
-# relabel any remaining predeploy as downcast
-# tdr_trim <- tdr_trim %>%
-#   mutate(down_up = if_else(down_up == "predeploy", "downcast", down_up))
-
-## --- which casts had no elog match (untrimmed) ---
-tdr_trim %>%
-  distinct(cruise, station, cast) %>%
-  anti_join(elog_wide, by = c("cruise", "station", "cast")) %>%
+manual_review <- meta_times %>%
+  filter(cruise %in% cruises_with_tdr$cruise) %>%  # only cruises with TDR
+  filter(!is.na(meta_deploy), is.na(meta_recover)) %>%
+  select(cruise, station, cast, meta_deploy) %>%
   arrange(cruise, station, cast)
-# EN655 = L9B15 has tdr cast but no sample hit bottom no time to re-do
-# EN712  = L6B5 hit bottom = no sample = tdr cast but no sample
+
+print(manual_review)
+
+## --- which casts had no meta match at all (fully untrimmed) ---
+tdr_trim %>%
+  filter(cruise %in% cruises_with_tdr$cruise) %>%  # only cruises with TDR
+  distinct(cruise, station, cast) %>%
+  mutate(cast_join = str_remove(cast, "^B")) %>%
+  anti_join(meta_times %>% filter(!is.na(meta_deploy)),
+            by = c("cruise", "station", "cast_join" = "cast")) %>%
+  select(-cast_join) %>%
+  arrange(cruise, station, cast)
+
+rm(meta_times, BUFFER_SECS, cruises_with_tdr, manual_review)
 
 ## ------------------------------------------ ##
-##  9a. Post-trim profile plots (labeled)  ----
+##  9a. Post-trim profile plots  ----
 ## ------------------------------------------ ##
-#### NEED TO CHECK THE PLOTS STILL UNSURE ABOUT THE CUTS
 for (cr in sort(unique(tdr_trim$cruise))) {
   df <- tdr_trim %>% filter(cruise == cr)
   if (nrow(df) == 0) next
@@ -1308,20 +1159,326 @@ for (cr in sort(unique(tdr_trim$cruise))) {
                  upcast    = "firebrick"),
       name = NULL
     ) +
-    facet_wrap(~label, scales = "free_x") +
+    facet_wrap(~label, scales = "free") +
     labs(title = paste("Post-trim labeled profiles —", cr),
          x = NULL, y = "Depth (m)") +
     theme_minimal() +
     theme(axis.text.x    = element_blank(),
           strip.text     = element_text(size = 6),
-          legend.position = "bottom")
+          legend.position = "bottom") +
+    guides(color = guide_legend(override.aes = list(size = 4)))
   print(p)
 }
 
+## ------------------------------------------ ##
+##  9b. Post-trim manual fixes  ----
+## ------------------------------------------ ##
+# not really a big time discrepancy or anything; just cutting off long tails 
+manual_fixes <- tribble(
+  ~cruise,  ~station, ~cast, ~fix_type, ~fix_time,
+  "EN720",  "L4",     "B6",  "start",   "2024-09-07 09:53:17",
+  "EN720",  "L9",     "B19", "start",   "2024-09-10 07:14:42",
+  "EN715",  "L2",     "B2",  "start",   "2024-05-04 04:30:35",
+  "EN712",  "L5",     "B2",  "start",   "2024-02-10 04:47:42",
+  "AE2426", "L1",     "B1",  "start",   "2024-11-06 17:11:59",
+  "EN687",  "L1",     "B1",  "start",   "2022-07-29 19:50:00",
+  "EN687",  "L1",     "B1",  "end",     "2022-07-29 19:55:00",
+  "EN687",  "L2",     "B2",  "end",     "2022-07-30 04:01:11",
+  "AE2426", "L2",     "B4",  "end",     "2024-11-07 09:27:06",
+  "HRS2303","L3",     "B11", "end",     "2023-05-04 23:28:21",
+  "HRS2303","L4",     "B10", "end",     "2023-05-04 19:22:12",
+  "EN706",  "L1",     "B1",  "end",     "2023-08-07 18:13:00",
+  "EN617",  "MVCO",   "B35", "end",     "2018-07-25 01:46:18",
+  "EN657",  "MVCO",   "B20", "end",     "2020-10-18 02:11:36"
+) %>%
+  mutate(fix_time = as.POSIXct(fix_time, tz = "UTC"))
+
+# start fixes: remove everything before fix_time
+start_fixes <- manual_fixes %>% filter(fix_type == "start")
+# end fixes: remove everything after fix_time
+end_fixes   <- manual_fixes %>% filter(fix_type == "end")
+
+tdr_trim <- tdr_trim %>%
+  left_join(start_fixes %>% select(cruise, station, cast, fix_time) %>%
+              rename(start_cut = fix_time),
+            by = c("cruise", "station", "cast")) %>%
+  left_join(end_fixes %>% select(cruise, station, cast, fix_time) %>%
+              rename(end_cut = fix_time),
+            by = c("cruise", "station", "cast")) %>%
+  filter(
+    (is.na(start_cut) | date_time >= start_cut),
+    (is.na(end_cut)   | date_time <= end_cut)
+  ) %>%
+  select(-start_cut, -end_cut)
+rm(manual_fixes, p, start_fixes, end_fixes)
+
+## ------------------------------------------ ##
+##  9c. Post-trim profile plots  ----
+## ------------------------------------------ ##
+for (cr in sort(unique(tdr_trim$cruise))) {
+  df <- tdr_trim %>% filter(cruise == cr)
+  if (nrow(df) == 0) next
+  
+  p <- df %>%
+    mutate(label = paste(station, cast)) %>%
+    ggplot(aes(x = date_time, y = depth_m, color = down_up)) +
+    geom_point(size = 0.8, alpha = 0.6) +
+    scale_y_reverse() +
+    scale_color_manual(
+      values = c(predeploy = "grey70",
+                 downcast  = "steelblue",
+                 upcast    = "firebrick"),
+      name = NULL
+    ) +
+    facet_wrap(~label, scales = "free") +
+    labs(title = paste("Post-trim labeled profiles —", cr),
+         x = NULL, y = "Depth (m)") +
+    theme_minimal() +
+    theme(axis.text.x    = element_blank(),
+          strip.text     = element_text(size = 6),
+          legend.position = "bottom") +
+    guides(color = guide_legend(override.aes = list(size = 4)))
+  print(p)
+}
+
+## ------------------------------------------ ##
+##   10. Add notes column           ----
+## ------------------------------------------ ##
+## ------------------------------------------ ##
+##  Cast-level quality notes  ----
+## ------------------------------------------ ##
+
+cast_notes <- tribble(
+  ~cruise,  ~station, ~cast, ~note_code,        ~note_detail,
+  "EN655",  "L9",     "B15", "hit_bottom",      "net hit bottom; no zooplankton sample; TDR cast only",
+  "EN712",  "L6",     "B5",  "hit_bottom",      "net hit bottom; no zooplankton sample; TDR cast only",
+  "AR99",   "L10",    "B6",  "tdr_late_start",  "TDR turned on after net in water; data starts at approx 37m on downcast",
+  "AR95",   "L3",     "B19", "tdr_late_start",  "TDR turned on after net in water; data starts at approx 19m on downcast",
+  "AE2426", "L9",     "B12", "upcast_only",     "upcast only; data starts at approx 85m on upcast",
+  "EN657",  "L1",     "B1",  "tdr_late_start",  "TDR turned on after net in water; data starts at approx 4m on downcast",
+  "EN655",  "L3",     "B3",  "tdr_late_start",  "TDR turned on after net in water; data starts at approx 10m on downcast",
+  "EN657",  "L4",     "B6",  "tdr_late_start",  "TDR turned on after net in water; data starts at approx 6m on downcast",
+  "EN627",  "L2",     "B7",  "tdr_early_end",   "TDR turned off before bongo out; data stopped at approx 4m on upcast"
+)
+
+# join notes into tdr_trim
+tdr_notes <- tdr_trim %>%
+  left_join(cast_notes, by = c("cruise", "station", "cast"))
+
+rm(cast_notes, tdr_trim, p)
+
+## ------------------------------------------ ##
+##   11. Add recording interval column  ----
+## ------------------------------------------ ##
+cast_intervals <- tdr_notes %>%
+  arrange(cruise, station, cast, date_time) %>%
+  group_by(cruise, station, cast) %>%
+  mutate(interval_sec = as.numeric(difftime(date_time, dplyr::lag(date_time), units = "secs"))) %>%
+  summarise(
+    tdr_sampling_interval_sec = round(median(interval_sec, na.rm = TRUE)),
+    tdr_max_gap_sec           = round(max(interval_sec, na.rm = TRUE)),
+    tdr_n_obs                 = n(),
+    .groups = "drop"
+  )
+
+tdr_data <- tdr_notes %>%
+  left_join(cast_intervals, by = c("cruise", "station", "cast"))
+
+rm(tdr_notes)
+
+## ------------------------------------------ ##
+##  12. QC / Validation checks           ----
+## ------------------------------------------ ##
+
+## ------------------------------------------ ##
+##  12a. Naming consistency checks       ----
+## ------------------------------------------ ##
+## All these should not print anything (tibble 0 x 1)
+
+# cruise: should all be uppercase alphanumeric
+tdr_data %>%
+  filter(!grepl("^[A-Z]{2,3}[0-9]+[A-Z]?$", cruise)) %>%
+  distinct(cruise)
+
+# station: should be L + integer, MVCO, or known opportunistic
+valid_stations <- c("MVCO", "u11c", "u9a")
+tdr_data %>%
+  filter(!grepl("^L[0-9]+$", station),
+         !station %in% valid_stations) %>%
+  distinct(cruise, station)
+
+# cast: should be B + integer or R + integer
+tdr_data %>%
+  filter(!grepl("^[BR][0-9]+$", cast)) %>%
+  distinct(cruise, station, cast)
+
+# down_up: should only be predeploy, downcast, upcast
+tdr_data %>%
+  filter(!down_up %in% c("predeploy", "downcast", "upcast")) %>%
+  distinct(down_up)
+
+rm(valid_stations)
+
+## ------------------------------------------ ##
+##  12b. Physical range checks (row-level) ----
+## ------------------------------------------ ##
+# reasonable ranges
+TEMP_MIN   <- -2    # deg C
+TEMP_MAX   <- 30    # deg C
+DEPTH_MIN  <-  0    # m
+DEPTH_MAX  <- 300   # m
+
+row_flags <- tdr_data %>%
+  mutate(
+    flag_temp_range  = temp_C < TEMP_MIN | temp_C > TEMP_MAX,
+    flag_depth_range = depth_m < DEPTH_MIN | depth_m > DEPTH_MAX,
+    flag_temp_na     = is.na(temp_C),
+    flag_depth_na    = is.na(depth_m),
+    flag_time_na     = is.na(date_time)
+  )
+
+# summary of flags
+row_flags %>%
+  summarise(across(starts_with("flag_"), \(x) sum(x, na.rm = TRUE))) %>%
+  pivot_longer(everything(), names_to = "flag", values_to = "n_flagged") %>%
+  filter(n_flagged > 0) %>%
+  print()
+
+# inspect flagged rows
+row_flags %>%
+  filter(flag_temp_range) %>%
+  select(cruise, station, cast, date_time, temp_C, depth_m) %>%
+  arrange(temp_C)
+
+rm(row_flags)
+
+## ------------------------------------------ ##
+##  12c. Temporal checks (cast-level)     ----
+## ------------------------------------------ ##
+
+cast_qc <- tdr_data %>%
+  arrange(cruise, station, cast, date_time) %>%
+  group_by(cruise, station, cast) %>%
+  summarise(
+    n_obs              = n(),
+    t_start            = min(date_time),
+    t_end              = max(date_time),
+    duration_min       = as.numeric(difftime(max(date_time), min(date_time), units = "mins")),
+    max_depth_m        = max(depth_m, na.rm = TRUE),
+    temp_min_C         = min(temp_C,  na.rm = TRUE),
+    temp_max_C         = max(temp_C,  na.rm = TRUE),
+    temp_range_C       = temp_max_C - temp_min_C,
+    n_temp_na          = sum(is.na(temp_C)),
+    n_time_reversal    = sum(diff(as.numeric(date_time)) < 0, na.rm = TRUE),
+    max_gap_sec        = tdr_max_gap_sec[1],
+    sampling_interval  = tdr_sampling_interval_sec[1],
+    .groups = "drop"
+  ) %>%
+  mutate(
+    # cast-level flags
+    flag_too_short      = duration_min < 5,          # < 5 min is suspicious
+    flag_too_long       = duration_min > 120,         # > 2 hrs is suspicious
+    flag_shallow        = max_depth_m < 15,           # barely went down
+    flag_temp_suspect   = temp_range_C > 15,          # >15 deg range in one cast
+    flag_time_reversal  = n_time_reversal > 0,        # timestamps go backwards
+    flag_large_gap      = max_gap_sec > 60,           # >1 min gap
+    flag_few_obs        = n_obs < 20,                 # very sparse
+    flag_nonstandard_interval = sampling_interval > 2 # not 1 or 2 sec
+  )
+
+# print cast-level flag summary
+cast_qc %>%
+  summarise(across(starts_with("flag_"), sum, na.rm = TRUE)) %>%
+  pivot_longer(everything(), names_to = "flag", values_to = "n_casts_flagged") %>%
+  filter(n_casts_flagged > 0) %>%
+  arrange(desc(n_casts_flagged)) %>%
+  print()
+
+# inspect flagged casts
+cast_qc %>%
+  filter(if_any(starts_with("flag_"), ~.)) %>%
+  select(cruise, station, cast, duration_min, max_depth_m,
+         temp_range_C, n_time_reversal, max_gap_sec, n_obs,
+         starts_with("flag_")) %>%
+  arrange(cruise, station, cast) %>%
+  print(n = Inf, width = Inf)
+
+## ------------------------------------------ ##
+##  12d. Temperature spike check         ----
+## ------------------------------------------ ##
+# flag rows where temp changes > threshold between consecutive obs
+TEMP_SPIKE_THRESH <- 3  # deg C per second; adjust as needed
+
+temp_spikes <- tdr_data %>%
+  arrange(cruise, station, cast, date_time) %>%
+  group_by(cruise, station, cast) %>%
+  mutate(
+    temp_diff = abs(temp_C - dplyr::lag(temp_C)),
+    dt_sec    = as.numeric(difftime(date_time, dplyr::lag(date_time), units = "secs")),
+    temp_rate = temp_diff / dt_sec   # deg C per second
+  ) %>%
+  filter(!is.na(temp_rate), temp_rate > TEMP_SPIKE_THRESH) %>%
+  select(cruise, station, cast, date_time, temp_C, temp_diff, temp_rate) %>%
+  ungroup()
+
+message("Temperature spikes flagged: ", nrow(temp_spikes))
+if (nrow(temp_spikes) > 0) print(temp_spikes, n = 30)
+
+## ------------------------------------------ ##
+##  12e. Duplicate timestamp check       ----
+## ------------------------------------------ ##
+
+dup_times <- tdr_data %>%
+  group_by(cruise, station, cast, date_time) %>%
+  filter(n() > 1) %>%
+  ungroup() %>%
+  distinct(cruise, station, cast, date_time)
+
+message("Duplicate timestamps: ", nrow(dup_times))
+if (nrow(dup_times) > 0) {
+  dup_times %>%
+    count(cruise, station, cast, name = "n_dups") %>%
+    arrange(desc(n_dups)) %>%
+    print(n = 20)
+}
+
+## ------------------------------------------ ##
+##  12f. Downcast/upcast balance check   ----
+## ------------------------------------------ ##
+# every cast should have both a downcast and upcast
+# (except known upcast_only cases)
+
+known_upcast_only <- c("AE2426_L9_B12")  # from cast_notes
+
+cast_coverage <- tdr_data %>%
+  group_by(cruise, station, cast) %>%
+  summarise(
+    has_downcast = any(down_up == "downcast"),
+    has_upcast   = any(down_up == "upcast"),
+    .groups = "drop"
+  ) %>%
+  mutate(cast_id = paste(cruise, station, cast, sep = "_")) %>%
+  filter(!cast_id %in% known_upcast_only) %>%
+  filter(!has_downcast | !has_upcast)
+
+if (nrow(cast_coverage) > 0) {
+  message("Casts missing downcast or upcast label:")
+  print(cast_coverage)
+} else {
+  message("All casts have both downcast and upcast labels.")
+}
+
+## --------
+
+## ------------------------------------------ ##
+##  Save           ----
+## ------------------------------------------ ##
+# export unbinned
 
 
-
-
+# relabel any remaining predeploy as downcast
+# tdr_trim <- tdr_trim %>%
+#   mutate(down_up = if_else(down_up == "predeploy", "downcast", down_up))
 
 ## ------------------------------------------ ##
 ##  10. Bin to 1-m depth intervals          ----
