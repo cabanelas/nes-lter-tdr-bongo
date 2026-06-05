@@ -4,18 +4,19 @@
 ##  Script:  02_tdr_tidy.R
 ##  Author:  Alexandra Cabanelas
 ##
-##  Purpose: Read per cast CSV files from all cruise TDR folders,
-##           tidy data, detect mutiple casts,
-##           label downcast/upcast, bin to 1-m depth intervals,
-##           and save per-cruise + one combined CSV.
-## Get CSVs for DAT-only cruises (EN608, EN627, EN644) run 01_tdr_dat_to_csv.R
+##  Purpose: Read per cast CSV files from all cruise TDR folders, tidy data,
+##           detect multiple casts, label downcast/upcast,
+##           bin to 1-m depth intervals, and save per-cruise + one combined CSV
+##
+##  Get CSVs for DAT-only cruises (EN608, EN627, EN644) run 01_tdr_dat_to_csv.R
 ## 
-##  Input:   data/raw/tdr_data/<CRUISE>_TDR/*.csv   (one CSV per cast)
-##           data/raw/elog_zoop_tows_thruAR99_2026-04-14.csv (FROM WHERE)
+##  Input:   data/raw/tdr_data/<CRUISE>_TDR/*.csv   (one CSV per bongo tow)
+##           data/raw/elog_zoop_tows_thruAR99_2026-04-14.csv
+##                    from nes-lter-api-pulls.Rproj; 01_elog_pull.R
 ##
 ##  Output:  data/processed/<CRUISE>_tdr_processed.csv  (per cruise)
-##           data/processed/allTDRdata.csv               (combined)
-##           data/processed/tdr_cast_qc_summary.csv      (QC table)
+##           data/processed/allTDRdata.csv              (combined)
+##           data/processed/tdr_cast_qc_summary.csv     (QC table)
 ##           data/processed/tdr_ctd_tests.csv            
 ###############################################################
 
@@ -33,15 +34,15 @@
 # 2026 = AR99, ***need to add HRS2601***
 
 # MISSING DATA
-## EN661 (winter 2021) logsheets say tdr recoded but didnt find data
+## EN661 (winter 2021) logsheets say tdr recorded but didnt find data
 ## EN668 (summer 2021) CTD was used; no tdr data found
 ## EN695 (winter 2023) tdr was used; no tdr data found 
 ## ------------------------------------------ ##
+# no TDR data for: EN661, AR63*, AR38, AR32, EN715, EN695, EN668 (CTD only)
 
 # .DAT files only, csv created in 01_tdr_dat_to_csv.R: EN644, EN627, EN608
 # xlsx files converted to csv in 01_tdr_dat_to_csv.R
 
-# no TDR data for the following cruises: EN661, AR63*, AR38, AR32, EN715, EN695, EN668 (CTD only)
 # CTD data available for: EN668 (no TDR) and EN706
 # PxSensor data available starting AE2426
 
@@ -181,8 +182,8 @@ find_first_peak <- function(depths, min_depth = 15) {
   return(which.max(depths))
 }
 
-## --- Auto-split a data frame containing multiple tows ---
-# Detects two tows by finding a shallow valley between two deep excursions.
+## --- Auto-split a data frame containing multiple casts ---
+# Detects two casts by finding a shallow valley between two deeper excursions.
 # valley must be < valley_ratio * first peak depth, and second peak > min_peak_depth
 #' @param df            Data frame for one (cruise, station, cast)
 #' @param base_cast     Original cast label e.g. "B25"
@@ -443,6 +444,10 @@ all_data %>%
   arrange(min_date) %>%
   print(n = Inf)
 
+## ------------------------------------------ ##
+##  Visual checks of data  ----
+## ------------------------------------------ ##
+
 gap_diagnostics <- all_data %>%
   filter(!is.na(depth_m), depth_m >= 0, !is.na(date_time)) %>%
   group_by(cruise, station, cast) %>%
@@ -509,7 +514,6 @@ all_data %>%
 # EN617 = L11B25ab = flowmeter calibration
 # EN627 = L8B19 = re-did deployment; so delete first aborted cast
 # EN657 = L3B2 (this contains L1 file); L6B17; L9B8 (L9B14,L8B15)
-# AT46  = L5B3 = maybe? not two casts but has mini spike after main cast
 # EN706 = L5B6 = re-did deployment; so delete first aborted cast
 # AR77  = L2B2 = re-did deployment; so delete first aborted cast
 # EN715 = L5B6 = re-did deployment; so delete first aborted cast
@@ -565,6 +569,7 @@ all_data %>%
 #              = L9B5 = the second cast is a ring net only at same L9R5
 #              = L10B6 = TDR turned on after net in water
 #              = L6B10 = the second cast is a ring net only at same L6R10
+
 # 2026 = ***need to add HRS2601***
 ## ------------------------------------------ ##
 
@@ -598,9 +603,6 @@ all_data %>%
 ## ------------------------------------------ ##
 ##  4. Isolate TDR-CTD bench tests   ----
 ## ------------------------------------------ ##
-#### NEED TO FIND WHICH HAVE THESE AND FIND CTD MAX DEPTH FOR EACH OF THESE TOWS
-#### NEED TO ADD CAST AND STATION TO SOME OF THESE
-#### DOING THIS WILL GIVE OFFSETS FOR ANY OF THESE
 
 # u9a (AR92) == TDR-CTD test
 tdr_test <- filter(all_data,
@@ -622,8 +624,7 @@ tdr_test <- filter(all_data,
 if (nrow(tdr_test) > 0) {
   if (!dir.exists(OUT_DIR)) dir.create(OUT_DIR, recursive = TRUE)
   write_csv(tdr_test, here(OUT_DIR, "tdr_ctd_tests.csv"))
-  message("  Saved ", nrow(tdr_test),
-          " TDR-CTD test rows -> tdr_ctd_tests.csv")
+  message("  Saved ", nrow(tdr_test), " TDR-CTD test rows -> tdr_ctd_tests.csv")
 }
 
 # EN617 L11 B25a and B25ab == flowmeter calibration can filter out these
@@ -638,8 +639,9 @@ all_data <- filter(all_data,
 ##  5. Fix/Validate TDR timestamps          ----
 ## ------------------------------------------ ##
 
+### --- Load elog data --- ###
 # elog data fixed and created in nes-lter-api-pulls.Rproj
-# 01_elog_pull
+# 01_elog_pull.R
 # https://github.com/cabanelas/nes-lter-api-pulls
 elog <- read_csv(file.path("data", "raw",
                            "elog_zoop_tows_thruAR99_2026-04-14.csv"))
@@ -673,7 +675,7 @@ timestamp_check <- tdr_times %>%
   ) %>%
   arrange(desc(abs(offset_deploy_min)))
 
-## --- or some cruises TDR computer was local time so need to adjust to UTC
+## --- on some cruises TDR computer was local time so need to adjust to UTC
 # review flagged ones
 timestamp_check %>%
   filter(flag_large_offset | flag_no_elog) %>%
@@ -700,6 +702,32 @@ timestamp_check %>%
 # EN655 = L9B15 hit bottom = no sample = tdr cast but no sample
 # EN712  = L6B5 hit bottom = no sample = tdr cast but no sample
 
+tdr_maxdepth <- all_data %>%
+  group_by(cruise, station, cast) %>%
+  slice_max(depth_m, n = 1, with_ties = FALSE) %>%
+  select(cruise, station, cast, time_at_maxdepth = date_time, maxdepth = depth_m) %>%
+  ungroup()
+
+maxdepth_check <- tdr_maxdepth %>%
+  left_join(elog_wide, by = c("cruise", "station", "cast")) %>%
+  mutate(
+    offset_maxdepth_deploy  = as.numeric(difftime(time_at_maxdepth, elog_deploy,  units = "mins")),
+    offset_maxdepth_recover = as.numeric(difftime(time_at_maxdepth, elog_recover, units = "mins")),
+    # max depth should fall AFTER deploy and BEFORE recover
+    flag_outside_window = offset_maxdepth_deploy < 0 | (!is.na(elog_recover) & offset_maxdepth_recover > 0)
+  )
+
+maxdepth_check %>%
+  group_by(cruise) %>%
+  summarise(
+    n_casts             = n(),
+    n_flag              = sum(flag_outside_window, na.rm = TRUE),
+    median_offset_deploy = median(offset_maxdepth_deploy, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  filter(n_flag > 0) %>%
+  arrange(desc(n_flag))
+
 # =============================================================================
 # TIMESTAMP CORRECTION NOTES
 # Based on timestamp_check output - TDR local time vs UTC offset review
@@ -709,7 +737,8 @@ timestamp_check %>%
 # --- CRUISE-LEVEL TIMEZONE CORRECTIONS NEEDED ---
 # These cruises show consistent ~same offset across all casts (both deploy AND
 # recover negative by similar magnitude) TDR computer was in local time (EDT = UTC-4
-# or EST = UTC-5). Fix by adding hours to tdr datetime column for these cruises.
+# or EST = UTC-5)
+# Fix by adding hours to tdr datetime column for these cruises.
 
 # cruises with systematic clock offsets to correct
 clock_offsets <- tribble(
@@ -732,8 +761,7 @@ all_data <- all_data %>%
       date_time + hours(clock_offsets$offset_hrs[match(cruise, clock_offsets$cruise)]),
     # HRS2303: all stations except the good ones need +4 hrs
     cruise == "HRS2303" & !station %in% hrs2303_good_stations ~ date_time + hours(4),
-    # one-off cast correction ## EN617 L1B1 needs 3 hr adjustment
-    cruise == "EN617" & station == "L1" & cast == "B1" ~ date_time + hours(3),
+    # EN617 L1B1 is a bad data cast and is delete below
     TRUE ~ date_time
   ))
 
@@ -741,11 +769,43 @@ all_data <- all_data %>%
 # EN627, EN644, EN649, EN655, EN657, AT46, EN687, HRS2303, EN706, AR77,
 # EN712, EN715, EN720, AE2426, EN727, AR88, AR92, AR95, AR99 
 
+tdr_times_corrected <- all_data %>%
+  group_by(cruise, station, cast) %>%
+  summarise(
+    tdr_start        = min(date_time, na.rm = TRUE),
+    tdr_end          = max(date_time, na.rm = TRUE),
+    tdr_duration_min = as.numeric(difftime(max(date_time), min(date_time), units = "mins")),
+    .groups = "drop"
+  )
+
+timestamp_check_corrected <- tdr_times_corrected %>%
+  left_join(elog_wide, by = c("cruise", "station", "cast")) %>%
+  mutate(
+    offset_deploy_min  = as.numeric(difftime(tdr_start, elog_deploy, units = "mins")),
+    duration_diff_min  = tdr_duration_min - elog_duration_min,
+    flag_no_elog       = is.na(elog_deploy),
+    flag_large_offset  = abs(offset_deploy_min) > 60,   # >1hr deploy offset = possible clock issue
+  )
+
+# sanity check - should only show real remaining issues
+timestamp_check_corrected %>%
+  group_by(cruise) %>%
+  summarise(
+    n_casts              = n(),
+    n_flag_offset        = sum(flag_large_offset, na.rm = TRUE),
+    median_deploy_offset = median(offset_deploy_min, na.rm = TRUE),
+    sd_deploy_offset     = sd(offset_deploy_min, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  filter(n_flag_offset > 0) %>%
+  arrange(desc(abs(median_deploy_offset)))
+
 ## ------------------------------------------ ##
 ##  6. Split merged multi-cast files       ----
 ## ------------------------------------------ ##
-# detect_and_split() checks whether a single file contains two or more
-# back-to-back tows (depth goes deep, returns to surface, then goes deep = 2 stations)
+# detect_and_split() checks whether a single file contains two or more casts
+# back-to-back tows (depth goes deep, returns to surface, then goes deep
+# these are either: 2 stations in 1 file; or bongo hit bottom and it was retried
 
 all_data <- all_data %>%
   group_by(cruise, station, cast) %>%
@@ -778,7 +838,7 @@ if (n_split > 0) {
 ##  7a. Manual resolution of auto-split casts ---
 ## ------------------------------------------ ##
 ## --- auto split in step 6 ---
-# -- need to manually identify whether second cast is aborted or a different staiton
+# -- manually identify whether second cast is aborted or a different station
 all_data %>%
   filter(grepl("_\\d+$", cast)) %>%
   group_by(cruise, station, cast) %>%
@@ -857,10 +917,10 @@ walk(plots, print)
 #        L9 B5_1                   -> bongo tow           -> rename to B5 
 #        L9 B5_2                   -> ring tow            -> rename to R5
 #
-# EN657  =
+# EN657  = no elog for B17_1. no comment on bongo logsheets
 #        L6 B17_1 = 69 min, 95 m   -> UNCLEAR             -> DROP for now
-# no elog for ^this. no comment on bongo logsheets
 #        L6 B17_2 = 64 min, 74 m   -> real tow            -> rename to B17
+# the 74m matches written TDR depth on bongo logsheet
 #
 # EN715  = re-deployed; delete first aborted cast
 #        L6 B13_1 = 15 min, 90 m   -> tow 1               -> DROP               
@@ -869,7 +929,6 @@ walk(plots, print)
 # EN715  = re-deployed; delete first aborted cast
 #        L8 B14_1 = 28 min, 136 m  -> tow 1               -> DROP
 #        L8 B14_2 = 13 min, 137 m  -> tow 2               -> rename to B14
-#
 
 ## --- Manual resolution of auto-split casts ---
 all_data <- all_data %>%
@@ -932,13 +991,13 @@ if (nrow(remaining_splits) == 0) {
 ## For files with 2 real casts, define the time boundary
 ## manually split & assign correct cast
 ##
-## Cases:
-# EN627 = L8B19 = re-did deployment; so delete first aborted cast
-# EN657 = L3B2 (this contains L1 file); L9B8 (L9B14,L8B15)
-# EN706 = L5B6 = re-did deployment; so delete first aborted cast
-# EN715 = L5B6 = re-did deployment; so delete first aborted cast
-# AE2426 = L8B13 funky stuff before start of actual cast
-# AR99 = L2B3  = the second cast is a ring net only at same L2R3
+## --- Cases:
+# EN627  = L8B19 = re-did deployment; so delete first aborted cast
+# EN657  = L3B2  = this contains L1 file; L9B8 (L9B14,L8B15)
+# EN706  = L5B6  = re-did deployment; so delete first aborted cast
+# EN715  = L5B6  = re-did deployment; so delete first aborted cast
+# AE2426 = L8B13 = funky stuff before start of actual cast
+# AR99   = L2B3  = the second cast is a ring net only at same L2R3
 
 ## --- Interactive plot to confirm time boundaries ---
 library(plotly)
@@ -1102,7 +1161,7 @@ for (cr in sort(unique(all_data$cruise))) {
 # Within each cast:
 #   - find the global depth maximum
 #   - detect where sustained descent begins (depth increases > 0.5 m
-#     over the next 10 observations) — this trims pre-deployment hang time
+#     over the next 10 observations) to trim pre-deployment hang time
 #   - rows before descent_start  -> "predeploy"
 #   - rows to depth maximum      -> "downcast"
 #   - rows after depth maximum   -> "upcast"
@@ -1146,7 +1205,7 @@ all_data %>%
 ## ------------------------------------------ ##
 # profiles (predeploy / downcast / upcast) to PDF.
 
-pdf(here("figures", "labeled_profiles_check2.pdf"),
+pdf(here("figures", "labeled_profiles_check_8a.pdf"),
     width = 14, height = 10)
 
 for (cr in sort(unique(all_data$cruise))) {
@@ -1177,7 +1236,7 @@ dev.off()
 ## ------------------------------------------ ##
 ##  8b. Manual down_up corrections         ----
 ## ------------------------------------------ ##
-# EN617 L1B1 = flat line? does the depth every change? maybe bad cast?
+# EN617 L1B1 = flat line? does the depth ever change? maybe bad cast?
 
 # quick interactive look at the flagged ones
 all_data %>%
@@ -1189,8 +1248,7 @@ all_data %>%
   arrange(cruise, station, cast) %>%
   print()
 
-# DELETE THIS CAST
-# delete bad cast
+## --- delete bad cast --- ##
 all_data <- all_data %>%
   filter(!(cruise == "EN617" & station == "L1" & cast == "B1"))
 
@@ -1201,7 +1259,7 @@ all_data <- all_data %>%
 # casts with no elog match pass through untrimmed
 # ring net casts (R*) won't have elog entries -> pass through untrimmed
 
-BUFFER_SECS <- 180  # 3 min buffer on each side
+BUFFER_SECS <- 300  # 5min buffer on each side
 
 tdr_trim <- all_data %>%
   left_join(
@@ -1209,9 +1267,11 @@ tdr_trim <- all_data %>%
     by = c("cruise", "station", "cast")
   ) %>%
   filter(
-    is.na(elog_deploy) |
-      (date_time >= elog_deploy  - BUFFER_SECS &
-       date_time <= elog_recover + BUFFER_SECS)
+    is.na(elog_deploy) |                          # no elog at all: pass through
+      (is.na(elog_recover) &                      # deploy only: trim start, no end cut
+         date_time >= elog_deploy - BUFFER_SECS) |
+      (date_time >= elog_deploy  - BUFFER_SECS &  # both: trim both ends
+         date_time <= elog_recover + BUFFER_SECS)
   ) %>%
   select(-elog_deploy, -elog_recover)
 
@@ -1222,13 +1282,10 @@ message("Rows after elog trim: ", nrow(tdr_trim))
 #   mutate(down_up = if_else(down_up == "predeploy", "downcast", down_up))
 
 ## --- which casts had no elog match (untrimmed) ---
-untrimmed <- tdr_trim %>%
+tdr_trim %>%
   distinct(cruise, station, cast) %>%
   anti_join(elog_wide, by = c("cruise", "station", "cast")) %>%
   arrange(cruise, station, cast)
-
-message("  Casts with no elog match: ", nrow(untrimmed))
-print(untrimmed, n = Inf)
 # EN655 = L9B15 has tdr cast but no sample hit bottom no time to re-do
 # EN712  = L6B5 hit bottom = no sample = tdr cast but no sample
 
@@ -1260,6 +1317,11 @@ for (cr in sort(unique(tdr_trim$cruise))) {
           legend.position = "bottom")
   print(p)
 }
+
+
+
+
+
 
 ## ------------------------------------------ ##
 ##  10. Bin to 1-m depth intervals          ----
