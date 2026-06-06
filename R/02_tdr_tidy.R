@@ -16,9 +16,8 @@
 ##           data/raw/all-nes-lter-bongologs-20260526.csv
 ##                    from nes-lter-tow-meta-v3.Rproj; 01_merge_bongo_logs.R
 ##                          
-##  Output:  data/processed/<CRUISE>_tdr_processed.csv  (per cruise)
+##  Output: FIX RDS data/processed/<CRUISE>_tdr_processed.csv  (per cruise)
 ##           data/processed/allTDRdata.csv              (combined)
-##           data/processed/tdr_cast_qc_summary.csv     (QC table)
 ##           data/processed/tdr_ctd_tests.csv            
 ###############################################################
 
@@ -253,7 +252,7 @@ gap_diagnostics %>%
 rm(gap_diagnostics)
 
 # --- depth profile plots per cruise ----
-pdf(here("figures", "raw_profiles_check.pdf"),
+pdf(here("figures", "raw_tdr_profiles_check.pdf"),
     width = 14, height = 10)
 
 for (cr in sort(unique(all_data$cruise))) {
@@ -273,7 +272,7 @@ for (cr in sort(unique(all_data$cruise))) {
 }
 
 dev.off()
-rm(p)
+rm(p, cr)
 
 all_data %>%
   distinct(cruise, station, cast) %>%
@@ -910,7 +909,6 @@ all_data %>%
   arrange(cruise, station, cast)
 
 # no double casts should remain
-
 for (cr in sort(unique(all_data$cruise))) {
   p <- all_data %>%
     filter(cruise == cr) %>%
@@ -927,7 +925,7 @@ for (cr in sort(unique(all_data$cruise))) {
   print(p)
 }
 rm(en627_L8_B19_split, en657_L3_B2_split, en657_L9_B14_split, en706_L5_B6_split,
-   en715_L5_B6_split, ae2426_L8_B13_split, ar99_L2_B3_split, p)
+   en715_L5_B6_split, ae2426_L8_B13_split, ar99_L2_B3_split, p, cr)
 
 ## ------------------------------------------ ##
 ##  8. Label downcast / upcast        ----
@@ -954,7 +952,7 @@ all_data %>%
 ## ------------------------------------------ ##
 # profiles (predeploy / downcast / upcast) to PDF.
 
-pdf(here("figures", "labeled_profiles_check_8a.pdf"),
+pdf(here("figures", "labeled_tdr_profiles_check_8a.pdf"),
     width = 14, height = 10)
 
 for (cr in sort(unique(all_data$cruise))) {
@@ -982,7 +980,7 @@ for (cr in sort(unique(all_data$cruise))) {
 }
 
 dev.off()
-rm(p)
+rm(p, cr)
 
 ## ------------------------------------------ ##
 ##  8b. Manual down_up corrections         ----
@@ -1169,6 +1167,7 @@ for (cr in sort(unique(tdr_trim$cruise))) {
     guides(color = guide_legend(override.aes = list(size = 4)))
   print(p)
 }
+rm(df, p, cr)
 
 ## ------------------------------------------ ##
 ##  9b. Post-trim manual fixes  ----
@@ -1210,11 +1209,15 @@ tdr_trim <- tdr_trim %>%
     (is.na(end_cut)   | date_time <= end_cut)
   ) %>%
   select(-start_cut, -end_cut)
-rm(manual_fixes, p, start_fixes, end_fixes)
+rm(manual_fixes, start_fixes, end_fixes)
 
 ## ------------------------------------------ ##
 ##  9c. Post-trim profile plots  ----
 ## ------------------------------------------ ##
+
+pdf(here("figures", "posttrim_tdr_profiles_check_9c.pdf"),
+    width = 14, height = 10)
+
 for (cr in sort(unique(tdr_trim$cruise))) {
   df <- tdr_trim %>% filter(cruise == cr)
   if (nrow(df) == 0) next
@@ -1241,6 +1244,9 @@ for (cr in sort(unique(tdr_trim$cruise))) {
   print(p)
 }
 
+dev.off()
+rm(df, p, cr)
+
 ## ------------------------------------------ ##
 ##   10. Add notes column           ----
 ## ------------------------------------------ ##
@@ -1265,7 +1271,7 @@ cast_notes <- tribble(
 tdr_notes <- tdr_trim %>%
   left_join(cast_notes, by = c("cruise", "station", "cast"))
 
-rm(cast_notes, tdr_trim, p)
+rm(cast_notes, tdr_trim)
 
 ## ------------------------------------------ ##
 ##   11. Add recording interval column  ----
@@ -1284,7 +1290,40 @@ cast_intervals <- tdr_notes %>%
 tdr_data <- tdr_notes %>%
   left_join(cast_intervals, by = c("cruise", "station", "cast"))
 
-rm(tdr_notes)
+# plot
+pdf(here("figures", "posttrim_tdr_profiles_11.pdf"),
+    width = 14, height = 10)
+
+for (cr in sort(unique(tdr_data$cruise))) {
+  df <- tdr_data %>% filter(cruise == cr)
+  if (nrow(df) == 0) next
+  
+  p <- df %>%
+    mutate(label = paste0(station, " ", cast, 
+                          "\n[", tdr_sampling_interval_sec, "s | ",
+                          tdr_n_obs, " obs]")) %>%
+    ggplot(aes(x = date_time, y = depth_m, color = down_up)) +
+    geom_point(size = 0.8, alpha = 0.6) +
+    scale_y_reverse() +
+    scale_color_manual(
+      values = c(predeploy = "grey70",
+                 downcast  = "steelblue",
+                 upcast    = "firebrick"),
+      name = NULL
+    ) +
+    facet_wrap(~label, scales = "free") +
+    labs(title = paste("Post-trim labeled profiles —", cr),
+         x = NULL, y = "Depth (m)") +
+    theme_minimal() +
+    theme(axis.text.x    = element_blank(),
+          strip.text     = element_text(size = 6),
+          legend.position = "bottom") +
+    guides(color = guide_legend(override.aes = list(size = 4)))
+  print(p)
+}
+
+dev.off()
+rm(tdr_notes, cast_intervals, df, p, cr)
 
 ## ------------------------------------------ ##
 ##  12. QC / Validation checks           ----
@@ -1322,16 +1361,11 @@ rm(valid_stations)
 ## ------------------------------------------ ##
 ##  12b. Physical range checks (row-level) ----
 ## ------------------------------------------ ##
-# reasonable ranges
-TEMP_MIN   <- -2    # deg C
-TEMP_MAX   <- 30    # deg C
-DEPTH_MIN  <-  0    # m
-DEPTH_MAX  <- 300   # m
 
 row_flags <- tdr_data %>%
   mutate(
-    flag_temp_range  = temp_C < TEMP_MIN | temp_C > TEMP_MAX,
-    flag_depth_range = depth_m < DEPTH_MIN | depth_m > DEPTH_MAX,
+    flag_temp_range  = temp_C < -2 | temp_C > 30,
+    flag_depth_range = depth_m < 0 | depth_m > 300,
     flag_temp_na     = is.na(temp_C),
     flag_depth_na    = is.na(depth_m),
     flag_time_na     = is.na(date_time)
@@ -1388,7 +1422,7 @@ cast_qc <- tdr_data %>%
 
 # print cast-level flag summary
 cast_qc %>%
-  summarise(across(starts_with("flag_"), sum, na.rm = TRUE)) %>%
+  summarise(across(starts_with("flag_"), \(x) sum(x, na.rm = TRUE))) %>%
   pivot_longer(everything(), names_to = "flag", values_to = "n_casts_flagged") %>%
   filter(n_casts_flagged > 0) %>%
   arrange(desc(n_casts_flagged)) %>%
@@ -1403,29 +1437,101 @@ cast_qc %>%
   arrange(cruise, station, cast) %>%
   print(n = Inf, width = Inf)
 
-## ------------------------------------------ ##
-##  12d. Temperature spike check         ----
-## ------------------------------------------ ##
-# flag rows where temp changes > threshold between consecutive obs
-TEMP_SPIKE_THRESH <- 3  # deg C per second; adjust as needed
+## --- plots 
+tdr_data %>%
+  filter(down_up == "downcast") %>%
+  mutate(month = lubridate::month(date_time, label = TRUE)) %>%
+  ggplot(aes(x = temp_C, y = depth_m, color = cruise)) +
+  geom_point(size = 0.2, alpha = 0.3) +
+  scale_y_reverse() +
+  facet_wrap(~month) +
+  labs(title = "Temperature-depth profiles by month (downcast only)",
+       x = "Temperature (°C)", y = "Depth (m)") +
+  theme_minimal() +
+  guides(color = guide_legend(override.aes = list(size = 3)))
 
-temp_spikes <- tdr_data %>%
+tdr_data %>%
+  filter(down_up == "downcast", depth_m < 5) %>%
+  mutate(month = lubridate::month(date_time),
+         year  = lubridate::year(date_time)) %>%
+  ggplot(aes(x = month, y = temp_C, color = factor(station))) +
+  geom_point() +
+  scale_x_continuous(breaks = 1:12) +
+  labs(title = "Near-surface temperature by month",
+       x = "Month", y = "Temp (°C)", color = "Station") +
+  theme_minimal()
+
+temp_jumps <- tdr_data %>%
   arrange(cruise, station, cast, date_time) %>%
   group_by(cruise, station, cast) %>%
-  mutate(
-    temp_diff = abs(temp_C - dplyr::lag(temp_C)),
-    dt_sec    = as.numeric(difftime(date_time, dplyr::lag(date_time), units = "secs")),
-    temp_rate = temp_diff / dt_sec   # deg C per second
-  ) %>%
-  filter(!is.na(temp_rate), temp_rate > TEMP_SPIKE_THRESH) %>%
-  select(cruise, station, cast, date_time, temp_C, temp_diff, temp_rate) %>%
+  mutate(temp_diff = abs(temp_C - dplyr::lag(temp_C))) %>%
+  filter(!is.na(temp_diff), temp_diff > 5) %>%  # >5°C between consecutive obs
+  select(cruise, station, cast, date_time, temp_C, temp_diff, depth_m) %>%
   ungroup()
 
-message("Temperature spikes flagged: ", nrow(temp_spikes))
-if (nrow(temp_spikes) > 0) print(temp_spikes, n = 30)
+message("Large consecutive temp jumps: ", nrow(temp_jumps))
+print(temp_jumps, n = 30)
+
+tdr_data %>%
+  filter(down_up == "downcast") %>%
+  mutate(
+    month  = lubridate::month(date_time),
+    season = case_when(
+      month %in% c(12, 1, 2) ~ "Winter",
+      month %in% c(3, 4, 5)  ~ "Spring",
+      month %in% c(6, 7, 8)  ~ "Summer",
+      month %in% c(9, 10, 11)~ "Fall"
+    )
+  ) %>%
+  ggplot(aes(x = reorder(cruise, date_time), y = temp_C, fill = season)) +
+  geom_boxplot(outlier.size = 0.5, alpha = 0.7) +
+  scale_fill_manual(values = c(Winter = "steelblue", Spring = "mediumseagreen",
+                               Summer = "tomato",    Fall   = "goldenrod")) +
+  labs(title = "Temperature distribution by cruise (downcast)",
+       x = NULL, y = "Temp (°C)", fill = "Season") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+tdr_data %>%
+  filter(down_up == "downcast", depth_m < 5,
+         station != "u11c") %>%
+  mutate(month = lubridate::month(date_time, label = TRUE)) %>%
+  ggplot(aes(x = month, y = temp_C)) +
+  geom_boxplot(fill = "steelblue", alpha = 0.7, outlier.size = 0.5) +
+  facet_wrap(~station) +
+  labs(title = "Near-surface temperature by month",
+       x = "Month", y = "Temp (°C)") +
+  theme_minimal()
+
+tdr_data %>%
+  filter(down_up == "downcast", depth_m < 5,
+         station != "u11c") %>%
+  mutate(month = lubridate::month(date_time, label = TRUE)) %>%
+  ggplot(aes(x = month, y = temp_C)) +
+  geom_boxplot(fill = "steelblue", alpha = 0.4, outlier.shape = NA) +
+  geom_jitter(aes(color = cruise), width = 0.2, size = 1.5, alpha = 0.8) +
+  facet_wrap(~station) +
+  labs(title = "Near-surface temperature by month",
+       x = "Month", y = "Temp (°C)", color = "Cruise") +
+  theme_minimal() +
+  guides(color = guide_legend(override.aes = list(size = 3)))
+
+tdr_data %>%
+  filter(down_up == "downcast", depth_m < 5,
+         station != "u11c") %>%
+  mutate(month = lubridate::month(date_time, label = TRUE),
+         year  = factor(lubridate::year(date_time))) %>%
+  ggplot(aes(x = month, y = temp_C)) +
+  geom_boxplot(fill = "steelblue", alpha = 0.4, outlier.shape = NA) +
+  geom_jitter(aes(color = year), width = 0.2, size = 1.5, alpha = 0.8) +
+  facet_wrap(~station) +
+  labs(title = "Near-surface temperature by month",
+       x = "Month", y = "Temp (°C)", color = "Year") +
+  theme_minimal() +
+  guides(color = guide_legend(override.aes = list(size = 3)))
 
 ## ------------------------------------------ ##
-##  12e. Duplicate timestamp check       ----
+##  12d. Duplicate timestamp check       ----
 ## ------------------------------------------ ##
 
 dup_times <- tdr_data %>%
@@ -1441,12 +1547,12 @@ if (nrow(dup_times) > 0) {
     arrange(desc(n_dups)) %>%
     print(n = 20)
 }
+rm(dup_times, temp_jumps)
 
 ## ------------------------------------------ ##
-##  12f. Downcast/upcast balance check   ----
+##  12e. Downcast/upcast balance check   ----
 ## ------------------------------------------ ##
 # every cast should have both a downcast and upcast
-# (except known upcast_only cases)
 
 known_upcast_only <- c("AE2426_L9_B12")  # from cast_notes
 
@@ -1468,279 +1574,23 @@ if (nrow(cast_coverage) > 0) {
   message("All casts have both downcast and upcast labels.")
 }
 
-## --------
-
-## ------------------------------------------ ##
-##  Save           ----
-## ------------------------------------------ ##
-# export unbinned
-
-
-# relabel any remaining predeploy as downcast
-# tdr_trim <- tdr_trim %>%
-#   mutate(down_up = if_else(down_up == "predeploy", "downcast", down_up))
-
-## ------------------------------------------ ##
-##  10. Bin to 1-m depth intervals          ----
-## ------------------------------------------ ##
-# average temp within each 1-m bin per cast x down_up
-# drop upcast rows shallower than 2 m (surface tail noise)
-
-tdr_binned <- bin_by_depth(tdr_trim)
-
-message("Binned rows: ", nrow(tdr_binned))
-message("Depth bins range: ", min(tdr_binned$depth_bin), " – ",
-        max(tdr_binned$depth_bin), " m")
-
-## ------------------------------------------ ##
-##  10a. Binned profile plots               ----
-## ------------------------------------------ ##
-
-pdf(here("figures", "binned_profiles_check.pdf"),
-    width = 14, height = 10)
-
-for (cr in sort(unique(tdr_binned$cruise))) {
-  p <- tdr_binned %>%
-    filter(cruise == cr) %>%
-    mutate(label = paste(station, cast)) %>%
-    ggplot(aes(x = avg_temp_C, y = depth_bin, color = down_up)) +
-    geom_path() +
-    scale_y_reverse() +
-    scale_x_continuous(position = "top") +
-    scale_color_manual(
-      values = c(downcast = "steelblue", upcast = "firebrick"),
-      name = NULL
-    ) +
-    facet_wrap(~label, scales = "free") +
-    labs(title = paste("Binned T profiles —", cr),
-         x = "Avg temp (°C)", y = "Depth bin (m)") +
-    theme_minimal() +
-    theme(strip.text      = element_text(size = 6),
-          legend.position = "bottom")
-  print(p)
-}
-
-dev.off()
-
-pdf(here("figures", "binned_depth_time_check.pdf"),
-    width = 14, height = 10)
-
-for (cr in sort(unique(tdr_binned$cruise))) {
-  p <- tdr_binned %>%
-    filter(cruise == cr) %>%
-    mutate(label = paste(station, cast)) %>%
-    ggplot(aes(x = date_time, y = depth_bin, color = avg_temp_C)) +
-    geom_point(size = 1.2) +
-    scale_y_reverse() +
-    scale_color_viridis_c(option = "plasma", name = "°C") +
-    facet_wrap(~label, scales = "free_x") +
-    labs(title = paste("Depth vs time (colored by temp) —", cr),
-         x = NULL, y = "Depth bin (m)") +
-    theme_minimal() +
-    theme(axis.text.x     = element_blank(),
-          strip.text      = element_text(size = 6),
-          legend.position = "bottom")
-  print(p)
-}
-
-dev.off()
-
-pdf(here("figures", "binned_temp_spread_check.pdf"),
-    width = 14, height = 10)
-
-for (cr in sort(unique(tdr_binned$cruise))) {
-  p <- tdr_binned %>%
-    filter(cruise == cr) %>%
-    mutate(label = paste(station, cast)) %>%
-    ggplot(aes(x = avg_temp_C, y = depth_bin,
-               color = down_up, group = down_up)) +
-    geom_path(linewidth = 0.6) +
-    geom_point(size = 0.8, alpha = 0.6) +
-    scale_y_reverse() +
-    scale_x_continuous(position = "top") +
-    scale_color_manual(
-      values = c(downcast = "steelblue", upcast = "firebrick"),
-      name = NULL
-    ) +
-    facet_wrap(~label, scales = "free") +
-    labs(title = paste("Down vs upcast temp —", cr),
-         x = "Avg temp (°C)", y = "Depth bin (m)") +
-    theme_minimal() +
-    theme(strip.text      = element_text(size = 6),
-          legend.position = "bottom")
-  print(p)
-}
-
-dev.off()
-
-tdr_binned %>%
-  group_by(cruise, station, cast) %>%
-  summarise(max_depth = max(depth_bin), .groups = "drop") %>%
-  ggplot(aes(x = reorder(paste(station, cast), max_depth), y = max_depth)) +
-  geom_col(fill = "steelblue", alpha = 0.7) +
-  facet_wrap(~cruise, scales = "free_x") +
-  labs(title = "Max depth per cast by cruise",
-       x = NULL, y = "Max depth bin (m)") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 90, size = 5),
-        strip.text  = element_text(size = 7))
-
-tdr_binned %>%
-  group_by(cruise, station, cast) %>%
-  summarise(max_temp = max(avg_temp_C), .groups = "drop") %>%
-  ggplot(aes(x = reorder(paste(station, cast), max_temp), y = max_temp)) +
-  geom_col(fill = "steelblue", alpha = 0.7) +
-  facet_wrap(~cruise, scales = "free_x") +
-  labs(title = "Max temp per cast by cruise",
-       x = NULL, y = "Max temp bin (C)") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 90, size = 5),
-        strip.text  = element_text(size = 7))
-
-## ------------------------------------------ ##
-##  11. ADD COMMENTS !!                    ----
-## ------------------------------------------ ##
-# add notes which messed up 
-# 2019 = EN627 = two casts L8B19 = first one hit bottom and redid cast
-# 2020 = EN655 = L9B15 has tdr cast but no sample hit bottom no time to re-do
-# 2020 = EN657 = 3 with multiple casts L3B2 (this contains L1 cast); L9B8 (L9B14,L8B15)
-# 2022 = AT46  = no TDR for L8B13
-# 2023 = EN706   = L5B6 re-did deployment; so delete first aborted cast
-# 2024 = EN712  = L6B5 hit bottom = no sample = tdr cast but no sample
-# 2024 = EN715  = L5B6 = hit bottom and re-did cast; delete first bad cast
-# 2024 = AE2426 = L9B12 upcast only 
-# 2025 = AR95  = L3B19 TDR turned on after net in water
-# 2026 = AR99  = L2B3 = the second cast is a ring net only at same L2R3
-#              = L10B6 = TDR turned on after net in water
-# AR99 = L2B3  = the second cast is a ring net only at same L2R3
-#      = L6B10 = the second cast is a ring net only at same L2R3
-#      = L9B5  = the second cast is a ring net only at same L2R3
-# EN617 L1B1 deleted bad tdr data
-# AT46  = L5B3 = maybe? not two casts but has mini spike after main cast
-# EN617 = L11B25ab = flowmeter calibration
-## --- flag sparse casts --- not set to record every sec may need to do this before binning 
-# check recording interval per cast
-all_data %>%
-  group_by(cruise, station, cast) %>%
-  arrange(date_time) %>%
-  summarise(
-    median_interval_sec = median(as.numeric(diff(date_time)), na.rm = TRUE),
-    n_obs               = n(),
-    .groups = "drop"
-  ) %>%
-  arrange(desc(median_interval_sec)) %>%
-  print(n = 330)
-
-# need to check ones with few obs as well 
-
-## ------------------------------------------ ##
-##  12. Cast QC summary                    ----
-## ------------------------------------------ ##
-
-cast_qc <- tdr_binned %>%
-  group_by(cruise, station, cast) %>%
-  summarise(
-    max_depth_m     = max(depth_bin,      na.rm = TRUE),
-    n_depth_bins    = n_distinct(depth_bin),
-    n_downcast_bins = sum(down_up == "downcast"),
-    n_upcast_bins   = sum(down_up == "upcast"),
-    date_time_start = min(date_time,      na.rm = TRUE),
-    date_time_end   = max(date_time,      na.rm = TRUE),
-    .groups         = "drop"
-  ) %>%
-  mutate(
-    duration_min = as.numeric(difftime(date_time_end, date_time_start,
-                                       units = "mins"))
-  )
-
-print(cast_qc, n = 20)
+rm(known_upcast_only, cast_coverage)
 
 ## ------------------------------------------ ##
 ##  13. Save outputs                        ----
 ## ------------------------------------------ ##
+# export unbinned
 if (!dir.exists(OUT_DIR)) dir.create(OUT_DIR, recursive = TRUE)
 
+saveRDS(tdr_data, here("data", "processed", 
+                       paste0("tdr_data_no_offset_", Sys.Date(), ".rds")))
+
+write_csv(tdr_data, here(OUT_DIR, "tdr_data_no_offset.csv"))
+
 # per-cruise CSVs
-message("Saving per-cruise CSVs ...")
-walk(unique(tdr_binned$cruise), function(cr) {
-  out_path <- here(OUT_DIR, paste0(cr, "_tdr_processed.csv"))
-  filter(tdr_binned, cruise == cr) %>% write_csv(out_path)
-  message("  Saved: ", basename(out_path))
-})
-
-# combined
-write_csv(tdr_binned, here(OUT_DIR, "allTDRdata.csv"))
-message("Saved combined -> allTDRdata.csv")
-
-# QC table
-write_csv(cast_qc, here(OUT_DIR, "tdr_cast_qc_summary.csv"))
-message("Saved QC -> tdr_cast_qc_summary.csv")
-
-message("\nDone.")
-
-
-
-
-
-## ------------------------------------------ ##
-##       OLD CODE ----
-## ------------------------------------------ ##
-
-## --------------------------------------------------------- ##
-# --- AE2426 L8 B13 ---
-# tdr recorded ~55 min of surface noise before actual cast.
-# ae2426_L8_B13_descent <- as.POSIXct("2024-11-09 19:12:37", tz = "UTC")
-# 
-# all_data <- all_data %>%
-#   mutate(down_up = case_when(
-#     cruise == "AE2426" & station == "L8" & cast == "B13" &
-#       date_time < ae2426_L8_B13_descent ~ "predeploy",
-#     TRUE ~ down_up
-#   ))
-
-# EN617 L11 B25ab
-# en617_L11_B25a_end   <- as.POSIXct("2018-07-25 08:50:00", tz = "UTC")
-# en617_L11_B25b_start <- as.POSIXct("2018-07-25 09:16:00", tz = "UTC")
-# 
-# all_data <- all_data %>%
-#   mutate(cast = case_when(
-#     cruise == "EN617" & station == "L11" & cast == "B25ab" &
-#       date_time <= en617_L11_B25a_end   ~ "B25a",
-#     cruise == "EN617" & station == "L11" & cast == "B25ab" &
-#       date_time >= en617_L11_B25b_start ~ "B25b",
-#     cruise == "EN617" & station == "L11" & cast == "B25ab" ~ NA_character_,
-#     TRUE ~ cast
-#   )) %>%
-#   filter(!is.na(cast))
-## ---------------------- ##
-# multiple casts - need to manually inspect
-# AE2426 = L8 B13 FIXED; L9 B12 correctly identified upcast
-#        = L1B1 & L4B18 = have a not-connected bit early on (surface time) that is still part of the cast (should be deleted)
-
-# AR77 = L02 B02 = these may be two separate casts that i may need to manually split; need to check
-#        L5B5 = did we accidentally collect data longer interval than 1sec??
-
-# AR88 = L5B5 = have a not-connected bit early on (surface time) that is still part of the cast (should be deleted)
-
-# AR92 = u9a B18 = have a not-connected bit early on (surface time) that is still part of the cast (should be deleted)
-
-# AT46 = all casts have long predeploy sections that should be excluded/deleted
-#      = L2B21; L3B22; L4B2; L5B3; L6B4; L7B14; L9B12; MVCO B23 = all have upcast data that keeps going well past net being on surface/back on deck
-
-# EN649 = pretty much all casts have upcast that keep going past net being back on deck and a couple have downcast before net was deployed
-
-# EN655 = same issue with many keeping upcast points well past net being on deck
-
-# EN657 = same issue with many keeping upcast points well past net being on deck
-#       = L03 B02 have quick cast and then a deeper one - two casts in this one file - may need to manually check??
-#       = L6B17 maybe two casts by accident need to manually check; L9 same issue
-
-# EN687 = L9B12 too few data points; did we accidentally set record to higher interval
-#       = the rest are good except that some have downcast or upcast while net was on deck
-
-# EN706 = L05B06 = need to manually check; maybe two casts on same file?
-
-# EN715 = L5B6; L6B13; L8B14 = manually chec; maybe two casts on same file? 
-#       = L2B2 has downcast values not connected to rest of cast; before net went in water
-#
-# HRS2303 = L1B2; L6B9; L7B4; L8B5; L9B6; MVCO B1 = too few data points; did we accidentally set record to higher interval
+# message("Saving per-cruise CSVs ...")
+# walk(unique(tdr_binned$cruise), function(cr) {
+#   out_path <- here(OUT_DIR, paste0(cr, "_tdr_processed.csv"))
+#   filter(tdr_binned, cruise == cr) %>% write_csv(out_path)
+#   message("  Saved: ", basename(out_path))
+# })
