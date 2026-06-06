@@ -1,75 +1,46 @@
 ###############################################################
-##  NES-LTER Bongo TDR: Merge & Process All Cruises
+##  NES-LTER Bongo TDR: TDR-CTD Offset Analysis
 ##  Project: nes-lter-tdr-bongo
 ##  Script:  03_tdr_offsets.R
 ##  Author:  Alexandra Cabanelas
 ##
 ##  Purpose:cross-ref with elog + CTD to build
 ## offset table, apply corrections
-
-##  Input:  data/processed/tdr_ctd_tests.csv (created in 02)
-##           data/raw/tdr_offsets.csv  
-
-# need to get CTD max depth from api and cross ref with elog
-# check what if any offset is needed then apply offsets to tdr data
-#### NEED TO FIND WHICH HAVE THESE AND FIND CTD MAX DEPTH FOR EACH OF THESE TOWS
-#### NEED TO ADD CAST AND STATION TO SOME OF THESE
-#### DOING THIS WILL GIVE OFFSETS FOR ANY OF THESE
-## ------------------------------------------ ##
-##  5. Join depth offsets                  ----
-## ------------------------------------------ ##
-#### MOVE THIS TO LATER/FURTHER DOWN  ##########
-#### WHAT ABOUT STEP 4     
-
-# offset_m = the instrument depth offset for a given cast
-# add depth_offset column
-# Corrected depth = depth_m - offset_m 
-
-tdr_ctd_test <- read.csv(here("data", "processed", "tdr_ctd_tests.csv"),
-                         stringsAsFactors = FALSE) 
-### NEED TO CHECK AND ADD OFFSETS TO CRUISES 
-# AR77; EN712, EN715, EN720, AE2426; EN727, AR88, AR92, AR95; AR99
-
-offsets <- read.csv(here("data", "raw", "tdr_offsets.csv"),
-                    stringsAsFactors = FALSE) %>%
-  mutate(across(c(cruise, station, cast), as.character))
-# 
-# all_data <- all_data %>%
-#   left_join(offsets, by = c("cruise", "station", "cast")) %>%
-#   mutate(
-#     depth_offset = replace_na(offset_m, 0),  # 0 if no offset recorded
-#     depth_m_raw  = depth_m,                  # preserve original
-#     depth_m      = depth_m - depth_offset    # corrected depth
-#   ) %>%
-#   select(-offset_m) %>%
-#   # after correction, remove any rows that went negative
-#   filter(depth_m >= 0)
-# 
-# # report which casts received a non-zero offset
-# offsets_applied <- all_data %>%
-#   filter(depth_offset != 0) %>%
-#   distinct(cruise, station, cast, depth_offset)
-# 
-# message("Depth offsets applied to ", nrow(offsets_applied), " cast(s):")
-# print(offsets_applied)
-
-###############################################################
-##  NES-LTER Bongo TDR: TDR-CTD Offset Analysis
-##  Project: nes-lter-tdr-bongo
-##  Script:  03_tdr_offsets.R
-##  Author:  Alexandra Cabanelas
-##
-##  Purpose: For casts where TDR was attached to CTD (bench tests),
+## For casts where TDR was attached to CTD (bench tests),
 ##           pull CTD max depth from NES-LTER API and compare to
 ##           TDR max depth to identify any depth offsets needed.
-##
-##  Input:   data/processed/tdr_ctd_tests.csv  (from 02_tdr_tidy.R)
+##  Input:  data/processed/tdr_ctd_tests.csv (from 02_tdr_tidy.R)
+##           data/raw/tdr_offsets.csv  
 ##
 ##  Output:  data/processed/tdr_ctd_offset_check.csv
 ###############################################################
 
 library(tidyverse)
 library(here)
+
+## ------------------------------------------ ##
+##  Input files                            ----
+## ------------------------------------------ ##
+
+# most recent tdr_data RDS from 02_tdr_tidy.R
+tdr_file <- sort(list.files(here("data", "processed"),
+                            pattern = "^tdr_data_\\d{4}-\\d{2}-\\d{2}\\.rds$",
+                            full.names = TRUE)) %>% tail(1)
+message("Reading: ", basename(tdr_file))
+tdr_data <- readRDS(tdr_file)
+
+# TDR-CTD bench tests
+tdr_ctd_test <- read_csv(here("data", "processed", "tdr_ctd_tests.csv"))
+
+# TDR offsets
+offsets <- read_csv(here("data", "raw", "tdr_offsets.csv")) %>%
+  mutate(across(c(cruise, station, cast), as.character))
+
+## ------------------------------------------ ##
+##  NES-LTER API: CTD data                ----
+## ------------------------------------------ ##
+# API docs: https://github.com/WHOIGit/nes-lter-ims/wiki/Using-REST-API-to-access-NES-LTER-data
+# base URL: https://nes-lter-data.whoi.edu/api/ctd/<cruise>/
 
 BASE_URL <- "https://nes-lter-api.whoi.edu/api"
 
@@ -97,6 +68,43 @@ all_data %>%
     .groups = "drop"
   ) %>%
   arrange(desc(max_min_depth))
+
+###### ORRRR ..... CHECK WHICH
+
+BASE_URL <- "https://nes-lter-data.whoi.edu/api/ctd"
+
+cruises_for_ctd <- tdr_data %>%
+  distinct(cruise) %>%
+  pull(cruise) %>%
+  tolower()  # API expects lowercase e.g. "en608"
+
+## --- fetch CTD metadata (cast list + lat/lon/station) per cruise ---
+ctd_meta <- map_dfr(cruises_for_ctd, function(cr) {
+  url <- glue::glue("{BASE_URL}/{cr}/metadata.csv")
+  tryCatch(
+    read_csv(url, show_col_types = FALSE) %>% mutate(cruise = toupper(cr)),
+    error = function(e) {
+      message("  ! No CTD metadata for: ", cr)
+      NULL
+    }
+  )
+})
+
+## --- fetch CTD bottle summary (temp, salinity, depth per niskin) ---
+ctd_bottles <- map_dfr(cruises_for_ctd, function(cr) {
+  url <- glue::glue("{BASE_URL}/{cr}/bottles.csv")
+  tryCatch(
+    read_csv(url, show_col_types = FALSE) %>% mutate(cruise = toupper(cr)),
+    error = function(e) {
+      message("  ! No CTD bottles for: ", cr)
+      NULL
+    }
+  )
+})
+
+glimpse(ctd_meta)
+glimpse(ctd_bottles)
+
 ## ------------------------------------------ ##
 ##  1. Load TDR-CTD test data               ----
 ## ------------------------------------------ ##
@@ -274,6 +282,36 @@ if (nrow(flagged) > 0) {
 ## ------------------------------------------ ##
 ##  7. Save                                 ----
 ## ------------------------------------------ ##
-
 write_csv(offset_check, here("data", "processed", "tdr_ctd_offset_check.csv"))
-message("Saved -> tdr_ctd_offset_check.csv")
+
+# need to get CTD max depth from api and cross ref with elog
+# check what if any offset is needed then apply offsets to tdr data
+#### NEED TO FIND WHICH HAVE THESE AND FIND CTD MAX DEPTH FOR EACH OF THESE TOWS
+#### NEED TO ADD CAST AND STATION TO SOME OF THESE
+#### DOING THIS WILL GIVE OFFSETS FOR ANY OF THESE
+# offset_m = the instrument depth offset for a given cast
+# add depth_offset column
+# Corrected depth = depth_m - offset_m 
+
+
+### NEED TO CHECK AND ADD OFFSETS TO CRUISES 
+# AR77; EN712, EN715, EN720, AE2426; EN727, AR88, AR92, AR95; AR99
+
+# all_data <- all_data %>%
+#   left_join(offsets, by = c("cruise", "station", "cast")) %>%
+#   mutate(
+#     depth_offset = replace_na(offset_m, 0),  # 0 if no offset recorded
+#     depth_m_raw  = depth_m,                  # preserve original
+#     depth_m      = depth_m - depth_offset    # corrected depth
+#   ) %>%
+#   select(-offset_m) %>%
+#   # after correction, remove any rows that went negative
+#   filter(depth_m >= 0)
+# 
+# # report which casts received a non-zero offset
+# offsets_applied <- all_data %>%
+#   filter(depth_offset != 0) %>%
+#   distinct(cruise, station, cast, depth_offset)
+# 
+# message("Depth offsets applied to ", nrow(offsets_applied), " cast(s):")
+# print(offsets_applied)
