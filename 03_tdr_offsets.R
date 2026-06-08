@@ -4,15 +4,18 @@
 ##  Script:  03_tdr_offsets.R
 ##  Author:  Alexandra Cabanelas
 ##
-##  Purpose:cross-ref with elog + CTD to build
-## offset table, apply corrections
+##  Purpose: cross-ref with elog + CTD, apply depth offsets as needed
 ## For casts where TDR was attached to CTD (bench tests),
 ##           pull CTD max depth from NES-LTER API and compare to
 ##           TDR max depth to identify any depth offsets needed.
 ##  Input:  data/processed/tdr_ctd_tests.csv (from 02_tdr_tidy.R)
-##           data/raw/tdr_offsets.csv  
+##          data/raw/tdr_offsets.csv  
+##          data/raw/all-nes-lter-bongologs-20260526.csv
+##  NES-LTER API 2
+##    https://github.com/WHOIGit/nes-lter-api-2/wiki
+##    https://nes-lter-api.whoi.edu/api/docs#/
 ##
-##  Output:  data/processed/tdr_ctd_offset_check.csv
+##  Output: data/processed/tdr_ctd_offset_check.csv
 ###############################################################
 
 library(tidyverse)
@@ -22,296 +25,252 @@ library(here)
 ##  Input files                            ----
 ## ------------------------------------------ ##
 
-# most recent tdr_data RDS from 02_tdr_tidy.R
+## --- most recent tdr_data RDS (from 02_tdr_tidy.R) --- ##
 tdr_file <- sort(list.files(here("data", "processed"),
-                            pattern = "^tdr_data_\\d{4}-\\d{2}-\\d{2}\\.rds$",
+                            pattern = "^tdr_data_no_offset_\\d{4}-\\d{2}-\\d{2}\\.rds$",
                             full.names = TRUE)) %>% tail(1)
 message("Reading: ", basename(tdr_file))
 tdr_data <- readRDS(tdr_file)
 
-# TDR-CTD bench tests
+## --- TDR-CTD bench tests (from 02_tdr_tidy.R) --- ##
 tdr_ctd_test <- read_csv(here("data", "processed", "tdr_ctd_tests.csv"))
 
-# TDR offsets
+## --- TDR offsets --- ##
 offsets <- read_csv(here("data", "raw", "tdr_offsets.csv")) %>%
-  mutate(across(c(cruise, station, cast), as.character))
+  mutate(across(c(cruise, station, cast), as.character)) #11 cruises
+
+# created in nes-lter-tow-meta-v3.Rproj; 01_merge_bongo_logs.R
+meta <- read_csv(file.path("data", "raw",
+                           "all-nes-lter-bongologs-20260526.csv"))
 
 ## ------------------------------------------ ##
-##  NES-LTER API: CTD data                ----
+##  Adjust time on tdr ctd test data
 ## ------------------------------------------ ##
-# API docs: https://github.com/WHOIGit/nes-lter-ims/wiki/Using-REST-API-to-access-NES-LTER-data
-# base URL: https://nes-lter-data.whoi.edu/api/ctd/<cruise>/
+# similar to what was done in 02_tdr_tidy.R line ~507
+# tdr_ctd_tests.csv was written BEFORE clock corrections in 02_tdr_tidy.R
+# must re-apply the same offsets here
 
-BASE_URL <- "https://nes-lter-api.whoi.edu/api"
+clock_offsets <- tribble(
+  ~cruise,   ~offset_hrs,
+  "EN712",   5,
+  "EN715",   4,
+  "EN720",   4
+)
 
-safe_read_csv <- function(url) {
-  tryCatch(
-    read_csv(url, show_col_types = FALSE),
-    error = function(e) {
-      message("  FAILED: ", url)
-      NULL
-    }
-  )
+tdr_ctd_test <- tdr_ctd_test %>%
+  left_join(clock_offsets, by = "cruise") %>%
+  mutate(
+    date_time = case_when(
+      !is.na(offset_hrs) ~ date_time + hours(offset_hrs),
+      TRUE ~ date_time
+    )
+  ) %>%
+  select(-offset_hrs)
+
+## ------------------------------------------ ##
+##  NES-LTER API2: Lookup missing metadata
+## ------------------------------------------ ##
+## manually identify missing station/cast for incomplete rows
+tdr_ctd_test %>%
+  distinct(cruise, station, cast, comments) %>%
+  arrange(cruise, station, cast) 
+# AT46 L2 (missing cast)
+# EN712   (missing station + cast)
+
+lookup_ctd_metadata <- function(cruise) {
+  url <- paste0("https://nes-lter-api.whoi.edu/api/ctd/metadata/", 
+                tolower(cruise), ".csv")
+  message("Fetching: ", url)
+  read_csv(url, show_col_types = FALSE)
 }
-all_data %>%
-  group_by(cruise, station, cast) %>%
-  summarise(
-    min_depth = min(depth_m, na.rm = TRUE),
-    max_depth = max(depth_m, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  group_by(cruise) %>%
-  summarise(
-    median_min_depth = median(min_depth, na.rm = TRUE),
-    max_min_depth    = max(min_depth, na.rm = TRUE),
-    median_max_depth = median(max_depth, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  arrange(desc(max_min_depth))
 
-###### ORRRR ..... CHECK WHICH
+## AT46 - find which casts are at L2
+lookup_ctd_metadata("AT46") %>% 
+  filter(nearest_station == "L2")
 
-BASE_URL <- "https://nes-lter-data.whoi.edu/api/ctd"
+tdr_ctd_test %>%
+  filter(cruise == "AT46", station == "L2") %>%
+  summarise(start = min(date_time), end = max(date_time))
+# cast 17 
 
-cruises_for_ctd <- tdr_data %>%
-  distinct(cruise) %>%
-  pull(cruise) %>%
-  tolower()  # API expects lowercase e.g. "en608"
+## EN712 
+lookup_ctd_metadata("EN712") %>% print(n=25)
 
-## --- fetch CTD metadata (cast list + lat/lon/station) per cruise ---
-ctd_meta <- map_dfr(cruises_for_ctd, function(cr) {
-  url <- glue::glue("{BASE_URL}/{cr}/metadata.csv")
-  tryCatch(
-    read_csv(url, show_col_types = FALSE) %>% mutate(cruise = toupper(cr)),
-    error = function(e) {
-      message("  ! No CTD metadata for: ", cr)
-      NULL
-    }
-  )
-})
-
-## --- fetch CTD bottle summary (temp, salinity, depth per niskin) ---
-ctd_bottles <- map_dfr(cruises_for_ctd, function(cr) {
-  url <- glue::glue("{BASE_URL}/{cr}/bottles.csv")
-  tryCatch(
-    read_csv(url, show_col_types = FALSE) %>% mutate(cruise = toupper(cr)),
-    error = function(e) {
-      message("  ! No CTD bottles for: ", cr)
-      NULL
-    }
-  )
-})
-
-glimpse(ctd_meta)
-glimpse(ctd_bottles)
+tdr_ctd_test %>% 
+  filter(cruise == "EN712") %>% 
+  summarise(start = min(date_time), end = max(date_time))
+# d1a cast 21
 
 ## ------------------------------------------ ##
-##  1. Load TDR-CTD test data               ----
+##  Manual metadata fixes                  ----
 ## ------------------------------------------ ##
 
-tdr_ctd_test <- read_csv(here("data", "processed", "tdr_ctd_tests.csv"),
-                         show_col_types = FALSE) %>%
-  mutate(date_time = as.POSIXct(date_time, tz = "UTC"))
+tdr_ctd_test <- tdr_ctd_test %>%
+  mutate(
+    # fill cast 
+    cast = case_when(
+      cruise == "AT46" & station == "L2" & is.na(cast) ~ "17",  
+      cruise == "EN712" & is.na(cast)                  ~ "21",    
+      TRUE ~ cast
+    ),
+    # fill station
+    station = case_when(
+      cruise == "EN712" & is.na(station) ~ "d1a",  
+      TRUE ~ station
+    )
+  )
 
-# TDR max depth per cast
+tdr_ctd_test %>%
+  distinct(cruise, station, cast, comments) %>%
+  arrange(cruise, station, cast) 
+
 tdr_maxdepth <- tdr_ctd_test %>%
   group_by(cruise, station, cast) %>%
   summarise(
     tdr_max_depth_m = max(depth_m, na.rm = TRUE),
     tdr_start       = min(date_time, na.rm = TRUE),
     tdr_end         = max(date_time, na.rm = TRUE),
-    n_tdr_obs       = n(),
     .groups = "drop"
   )
 
-message("TDR-CTD test casts:")
-print(tdr_maxdepth)
-
-# which cruises to look up
-cruises_to_check <- unique(tolower(tdr_maxdepth$cruise))
-message("Cruises to pull CTD data for: ", paste(cruises_to_check, collapse = ", "))
-
 ## ------------------------------------------ ##
-##  2. Pull CTD cast metadata from API      ----
+##  NES-LTER API: CTD data                ----
 ## ------------------------------------------ ##
-# get cast metadata (cruise, cast number, nearest_station, lat, lon, date)
 
-meta_list <- map(cruises_to_check, function(cru) {
-  message("  pulling metadata: ", cru)
-  url <- paste0(BASE_URL, "/ctd/metadata/", cru, ".csv")
-  df  <- safe_read_csv(url)
-  if (!is.null(df)) {
-    df %>%
-      mutate(
-        cruise = toupper(cru),
-        cast   = as.character(cast)
-      )
-  }
-})
+BASE_URL <- "https://nes-lter-api.whoi.edu/api"
 
-ctd_meta <- bind_rows(meta_list)
-
-message("CTD metadata rows: ", nrow(ctd_meta))
-glimpse(ctd_meta)
-
-## ------------------------------------------ ##
-##  3. Pull CTD bottle data for max depth   ----
-## ------------------------------------------ ##
-# bottle data gives us discrete depth samples per cast
-# max bottle depth = approximate CTD max depth
-
-bottle_list <- map(cruises_to_check, function(cru) {
-  message("  pulling bottles: ", cru)
-  url <- paste0(BASE_URL, "/ctd/bottles/", cru, ".csv")
-  df  <- safe_read_csv(url)
-  if (!is.null(df)) {
-    df %>%
-      mutate(
-        cruise = toupper(cru),
-        cast   = as.character(cast)
-      )
-  }
-})
-
-ctd_bottles <- bind_rows(bottle_list)
-
-# CTD max depth per cast from bottles
-ctd_maxdepth <- ctd_bottles %>%
-  group_by(cruise, cast) %>%
-  summarise(
-    ctd_max_depth_m  = max(depsm, na.rm = TRUE),
-    ctd_n_bottles    = n(),
-    .groups = "drop"
+# not sure if i should keep here or in helpers.R
+safe_read_csv <- function(url) {
+  tryCatch(
+    read_csv(url, show_col_types = FALSE),
+    error = function(e) { message("  FAILED: ", url); NULL }
   )
-## ------------------------------------------ ##
-##  4. Join and compare                     ----
-## ------------------------------------------ ##
-
-# join metadata + max depth, then match to TDR by cruise + nearest_station
-ctd_cast_info <- ctd_meta %>%
-  left_join(ctd_maxdepth, by = c("cruise", "cast"))
-
-offset_check <- tdr_maxdepth %>%
-  left_join(
-    ctd_cast_info %>%
-      select(cruise, ctd_cast = cast, nearest_station,
-             ctd_date = date, ctd_max_depth_m, ctd_n_bottles),
-    by = c("cruise", "station" = "nearest_station")
-  ) %>%
-  mutate(
-    depth_diff_m      = tdr_max_depth_m - ctd_max_depth_m,
-    flag_large_offset = abs(depth_diff_m) > 5
-  )
-
-message("\nTDR vs CTD depth comparison:")
-offset_check %>%
-  select(cruise, station, cast, ctd_cast, ctd_date,
-         tdr_max_depth_m, ctd_max_depth_m,
-         depth_diff_m, flag_large_offset) %>%
-  print(n = Inf)
-## ------------------------------------------ ##
-##  4. Match TDR casts to CTD casts         ----
-## ------------------------------------------ ##
-# TDR test casts have station (e.g. "u9a", "L5") and cast (e.g. "B18")
-# CTD casts are numbered (1, 2, 3...) with nearest_station assigned by API
-# need to match by cruise + nearest_station + time overlap
-
-# join CTD metadata with max depth
-ctd_cast_summary <- ctd_meta %>%
-  left_join(ctd_maxdepth, by = c("cruise", "cast")) %>%
-  mutate(date = as.POSIXct(date, tz = "UTC")) %>%
-  select(cruise, cast, nearest_station, date,
-         latitude, longitude, ctd_max_depth_m, ctd_n_bottles)
-
-message("CTD casts with depth info:")
-print(ctd_cast_summary %>% arrange(cruise, cast))
-
-## ------------------------------------------ ##
-##  5. Match by time proximity              ----
-## ------------------------------------------ ##
-# for each TDR test cast, find the CTD cast whose time is closest
-# to the TDR deployment window
-
-offset_check <- tdr_maxdepth %>%
-  rowwise() %>%
-  mutate(
-    # filter CTD casts from same cruise
-    ctd_same_cruise = list(
-      ctd_cast_summary %>%
-        filter(cruise == !!cruise, !is.na(date))
-    ),
-    # find closest CTD cast by time
-    time_diff_hrs = list(
-      as.numeric(difftime(ctd_same_cruise$date, tdr_start, units = "hours"))
-    ),
-    closest_idx = if (length(time_diff_hrs) > 0)
-      which.min(abs(unlist(time_diff_hrs))) else NA_integer_,
-    ctd_cast          = if (!is.na(closest_idx)) ctd_same_cruise$cast[closest_idx]          else NA_character_,
-    ctd_nearest_sta   = if (!is.na(closest_idx)) ctd_same_cruise$nearest_station[closest_idx] else NA_character_,
-    ctd_cast_time     = if (!is.na(closest_idx)) ctd_same_cruise$date[closest_idx]           else as.POSIXct(NA),
-    ctd_max_depth_m   = if (!is.na(closest_idx)) ctd_same_cruise$ctd_max_depth_m[closest_idx] else NA_real_,
-    time_offset_hrs   = if (!is.na(closest_idx)) unlist(time_diff_hrs)[closest_idx]          else NA_real_
-  ) %>%
-  ungroup() %>%
-  select(-ctd_same_cruise, -time_diff_hrs, -closest_idx) %>%
-  mutate(
-    depth_diff_m = tdr_max_depth_m - ctd_max_depth_m,
-    flag_large_offset = abs(depth_diff_m) > 5  # flag if TDR vs CTD differ by >5m
-  )
-
-message("\nTDR vs CTD depth comparison:")
-print(offset_check %>% select(cruise, station, cast,
-                              tdr_max_depth_m, ctd_max_depth_m,
-                              depth_diff_m, flag_large_offset,
-                              time_offset_hrs), n = Inf)
-
-## ------------------------------------------ ##
-##  6. Flag and review                      ----
-## ------------------------------------------ ##
-
-flagged <- offset_check %>% filter(flag_large_offset)
-
-if (nrow(flagged) > 0) {
-  message("\n!! ", nrow(flagged), " cast(s) with large TDR-CTD depth offset (>5m):")
-  print(flagged %>% select(cruise, station, cast,
-                           tdr_max_depth_m, ctd_max_depth_m, depth_diff_m))
-} else {
-  message("  No large offsets detected.")
 }
 
+ctd_maxdepth <- tdr_maxdepth %>%
+  distinct(cruise, cast) %>%
+  pmap_dfr(function(cruise, cast) {
+    cr       <- tolower(cruise)
+    ctd_cast <- str_remove(cast, "^B")   # strip B prefix for API
+    url      <- paste0(BASE_URL, "/ctd/cast/", cr, "/", ctd_cast, ".csv")
+    message("  fetching: ", url)
+    df <- safe_read_csv(url)
+    if (is.null(df)) return(NULL)
+    df %>%
+      summarise(ctd_max_depth_m = max(depsm, na.rm = TRUE)) %>%
+      mutate(cruise = toupper(cruise), cast = cast)  # keep original cast (with B) for joining back
+  })
+
+tdr_ctd_offset_check <- tdr_maxdepth %>%
+  left_join(ctd_maxdepth, by = c("cruise", "cast")) %>%
+  mutate(depth_offset_m = ctd_max_depth_m - tdr_max_depth_m)
+
 ## ------------------------------------------ ##
-##  7. Save                                 ----
+##  Add meta context to offset check        ----
 ## ------------------------------------------ ##
-write_csv(offset_check, here("data", "processed", "tdr_ctd_offset_check.csv"))
+meta_context <- meta %>%
+  mutate(across(c(cruise, station, cast), as.character)) %>%
+  filter(cruise %in% tdr_ctd_offset_check$cruise) %>%
+  distinct(cruise, station, cast, depth_bottom, depth_target)
 
-# need to get CTD max depth from api and cross ref with elog
-# check what if any offset is needed then apply offsets to tdr data
-#### NEED TO FIND WHICH HAVE THESE AND FIND CTD MAX DEPTH FOR EACH OF THESE TOWS
-#### NEED TO ADD CAST AND STATION TO SOME OF THESE
-#### DOING THIS WILL GIVE OFFSETS FOR ANY OF THESE
-# offset_m = the instrument depth offset for a given cast
-# add depth_offset column
-# Corrected depth = depth_m - offset_m 
+tdr_ctd_offset_check <- tdr_ctd_offset_check %>%
+  mutate(cast_stripped = str_remove(cast, "^B")) %>%
+  left_join(meta_context, by = c("cruise", "station", "cast_stripped" = "cast")) %>%
+  select(-cast_stripped)
+
+## ------------------------------------------ ##
+##  AT46 cross-reference with manual offsets ----
+## ------------------------------------------ ##
+offsets %>%
+  filter(cruise == "AT46") %>%
+  arrange(offset_m, station) 
+## compare to what CTD bench test gives us
+tdr_ctd_offset_check %>%
+  filter(cruise == "AT46") %>%
+  select(cruise, station, cast, tdr_max_depth_m, ctd_max_depth_m, 
+         depth_offset_m) 
+
+## ------------------------------------------ ##
+##  Expand cruise-wide offsets to all casts ----
+## ------------------------------------------ ##
+## for cruises NOT in manual offsets: AR92, EN712, EN715, EN720
+## use the bench test depth_offset_m for all casts on that cruise
+new_offsets <- tdr_ctd_offset_check %>%
+  filter(!cruise %in% offsets$cruise) %>%  # exclude AT46 - already in offsets
+  select(cruise, depth_offset_m) %>%
+  mutate(depth_offset_m = round(depth_offset_m)) %>%
+  left_join(
+    tdr_data %>% distinct(cruise, station, cast),
+    by = "cruise"
+  ) %>%
+  rename(offset_m = depth_offset_m)
+
+## combine with existing manual offsets
+offsets_combined <- bind_rows(offsets, new_offsets) %>%
+  arrange(cruise, station, cast)
 
 
-### NEED TO CHECK AND ADD OFFSETS TO CRUISES 
-# AR77; EN712, EN715, EN720, AE2426; EN727, AR88, AR92, AR95; AR99
+## ------------------------------------------ ##
+##  PXsensor offsets
+## ------------------------------------------ ##
+## ------------------------------------------ ##
+##  CTD on bongo 
+## ------------------------------------------ ##
 
-# all_data <- all_data %>%
-#   left_join(offsets, by = c("cruise", "station", "cast")) %>%
-#   mutate(
-#     depth_offset = replace_na(offset_m, 0),  # 0 if no offset recorded
-#     depth_m_raw  = depth_m,                  # preserve original
-#     depth_m      = depth_m - depth_offset    # corrected depth
-#   ) %>%
-#   select(-offset_m) %>%
-#   # after correction, remove any rows that went negative
-#   filter(depth_m >= 0)
-# 
-# # report which casts received a non-zero offset
-# offsets_applied <- all_data %>%
-#   filter(depth_offset != 0) %>%
-#   distinct(cruise, station, cast, depth_offset)
-# 
-# message("Depth offsets applied to ", nrow(offsets_applied), " cast(s):")
-# print(offsets_applied)
+## ------------------------------------------ ##
+##  TDR offsets comments in meta
+## ------------------------------------------ ##
+check_comments_meta <- meta %>%
+  filter(grepl("TDR|tdr|offset", comments, ignore.case = TRUE)) %>%
+  select(cruise, station, cast, depth_bottom, depth_target, comments) %>%
+  arrange(cruise, station)
+## based on comments, check: AR88 MVCO; EN727 L1 TDR check for offset 
+
+# already applied; had notes about offsets in metadata
+# AT46; EN644; EN655
+# EN715 TDR was tested on CTD cast. CTD = 135.7m vs TDR = 132.7m = 3m offset on TDR readings
+
+## ------------------------------------------ ##
+##  Check which cruises missing offsets
+## ------------------------------------------ ##
+all_cruises <- tdr_data %>% distinct(cruise) %>% pull(cruise)
+cruises_with_offsets <- offsets_combined %>% distinct(cruise) %>% pull(cruise)
+
+missing_offsets <- setdiff(all_cruises, cruises_with_offsets)
+cat("Cruises in tdr_data with NO offsets:\n")
+print(missing_offsets)
+
+print(sort(cruises_with_offsets))
+
+## ------------------------------------------ ##
+##  Visual QC: cruises with offset > 0      ----
+## ------------------------------------------ ##
+cruises_nonzero <- offsets_combined %>%
+  group_by(cruise) %>%
+  summarise(max_offset = max(abs(offset_m)), .groups = "drop") %>%
+  filter(max_offset > 0) %>%
+  arrange(desc(max_offset)) %>%
+  pull(cruise)
+
+cat("\nCruises with offset > 0 (to visually check):\n")
+print(cruises_nonzero)
+
+## PRINT MIN DEPTH ON EACH CAST ON PLOT
+## plot depth profiles for each, colored by offset magnitude
+tdr_data %>%
+  filter(cruise %in% cruises_nonzero) %>%
+  left_join(offsets_combined, by = c("cruise", "station", "cast")) %>%
+  filter(down_up == "downcast") %>%
+  ggplot(aes(x = date_time, y = depth_m, color = offset_m)) +
+  geom_line(linewidth = 0.3) +
+  scale_y_reverse() +
+  scale_color_viridis_c(option = "plasma", na.value = "gray70") +
+  facet_wrap(~cruise, scales = "free_x") +
+  labs(title = "TDR downcast depth profiles — cruises with nonzero offset",
+       x = NULL, y = "depth (m)", color = "offset (m)") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank())
+
+
+
+# output

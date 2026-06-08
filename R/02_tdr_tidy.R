@@ -5,8 +5,7 @@
 ##  Author:  Alexandra Cabanelas
 ##
 ##  Purpose: Read per cast CSV files from all cruise TDR folders, tidy data,
-##           detect multiple casts, label downcast/upcast,
-##           bin to 1-m depth intervals, and save per-cruise + one combined CSV
+##           detect multiple casts, label downcast/upcast, export RDS & csv
 ##
 ##  Get CSVs for DAT-only cruises (EN608, EN627, EN644) run 01_tdr_dat_to_csv.R
 ## 
@@ -16,7 +15,7 @@
 ##           data/raw/all-nes-lter-bongologs-20260526.csv
 ##                    from nes-lter-tow-meta-v3.Rproj; 01_merge_bongo_logs.R
 ##                          
-##  Output: FIX RDS data/processed/<CRUISE>_tdr_processed.csv  (per cruise)
+##  Output: FIX RDS**** data/processed/<CRUISE>_tdr_processed.csv  (per cruise)
 ##           data/processed/allTDRdata.csv              (combined)
 ##           data/processed/tdr_ctd_tests.csv            
 ###############################################################

@@ -287,3 +287,14 @@ bin_by_depth <- function(df) {
     ) %>%
     arrange(cruise, station, cast, date_time)
 }
+
+
+## --- for reading API2 data
+# 02_px_sensor_tidy.R
+# 03_tdr_offsets.R
+safe_read_csv <- function(url) {
+  tryCatch(
+    read_csv(url, show_col_types = FALSE),
+    error = function(e) { message("  FAILED: ", url); NULL }
+  )
+}
