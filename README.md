@@ -67,11 +67,11 @@ Recording interval: 1 second. Two TDR serial numbers used across the time series
 | TDR not deployed | AR63, AR38, AR32 |
 | CTD used instead | EN668 |
 
-### CTD ([SeaBird SBE19plus V2 SEACAT](https://vocab.nerc.ac.uk/collection/L22/current/TOOL0871/)), serial no. 8120)
+### CTD ([SeaBird SBE19plus V2 SEACAT](https://vocab.nerc.ac.uk/collection/L22/current/TOOL0871/)), serial no. 8120
 
 Recording interval: 4 Hz (0.25 seconds). Available for EN668 (no TDR) and EN706 (also has TDR).
 
-### PX sensor ([Kongsberg Simrad PX Universal](https://vocab.nerc.ac.uk/collection/L22/current/TOOL1797/)), serial no. 274571)
+### PX sensor ([Kongsberg Simrad PX Universal](https://vocab.nerc.ac.uk/collection/L22/current/TOOL1797/)), serial no. 274571
 
 Recording interval: 2 seconds (most cruises); 4 seconds (AR99). Deployed with TDR starting AE2426.
 
