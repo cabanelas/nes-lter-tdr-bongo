@@ -209,10 +209,51 @@ new_offsets <- tdr_ctd_offset_check %>%
 offsets_combined <- bind_rows(offsets, new_offsets) %>%
   arrange(cruise, station, cast)
 
-
 ## ------------------------------------------ ##
 ##  PXsensor offsets
 ## ------------------------------------------ ##
+## HERE
+## load most recent px_data_bongo RDS (from 02_px_sensor_tidy.R)
+px_file <- sort(list.files(here("data", "processed"),
+                           pattern = "^px_data_bongo_\\d{4}-\\d{2}-\\d{2}\\.rds$",
+                           full.names = TRUE)) %>% tail(1)
+px_data_bongo <- readRDS(px_file)
+
+## px max depth per cast 
+px_maxdepth <- px_data_bongo %>%
+  #filter(down_up == "downcast") %>%
+  group_by(cruise, station, cast) %>%
+  summarise(px_max_depth_m = max(depth_m, na.rm = TRUE), .groups = "drop")
+
+## add to offsets_combined as context
+offsets_combined <- offsets_combined %>%
+  left_join(px_maxdepth, by = c("cruise", "station", "cast"))
+
+## check: cruises that have both TDR offsets AND px data
+offsets_combined %>%
+  filter(!is.na(px_max_depth_m)) %>%
+  mutate(px_tdr_diff = px_max_depth_m - offset_m) %>%
+  select(cruise, station, cast, offset_m, px_max_depth_m, px_tdr_diff) %>%
+  arrange(cruise, station) %>%
+  print(n = Inf)
+
+tdr_maxdepth_all <- tdr_data %>%
+  group_by(cruise, station, cast) %>%
+  summarise(tdr_max_depth_m = max(depth_m, na.rm = TRUE), .groups = "drop")
+
+px_tdr_compare <- px_maxdepth %>%
+  inner_join(tdr_maxdepth_all, by = c("cruise", "station", "cast")) %>%
+  left_join(offsets_combined %>% select(cruise, station, cast, offset_m),
+            by = c("cruise", "station", "cast")) %>%
+  mutate(
+    tdr_corrected_depth = tdr_max_depth_m + offset_m,
+    px_vs_tdr_raw       = px_max_depth_m - tdr_max_depth_m,
+    px_vs_tdr_corrected = px_max_depth_m - tdr_corrected_depth
+  ) %>%
+  arrange(cruise, station)
+
+print(px_tdr_compare, n = Inf)
+
 ## ------------------------------------------ ##
 ##  CTD on bongo 
 ## ------------------------------------------ ##
@@ -229,6 +270,9 @@ check_comments_meta <- meta %>%
 # already applied; had notes about offsets in metadata
 # AT46; EN644; EN655
 # EN715 TDR was tested on CTD cast. CTD = 135.7m vs TDR = 132.7m = 3m offset on TDR readings
+
+
+
 
 ## ------------------------------------------ ##
 ##  Check which cruises missing offsets
