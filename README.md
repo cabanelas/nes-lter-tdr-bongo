@@ -1,8 +1,8 @@
 # nes-lter-tdr-bongo
 
-R pipeline for processing temperature and depth profiles from instruments attached to Bongo net tows during Northeast U.S. Shelf Long-Term Ecological Research (NES-LTER) Transect cruises, ongoing since 2017.
+R pipeline for processing temperature and depth profiles from instruments attached to Bongo net tows during Northeast U.S. Shelf Long-Term Ecological Research (NES-LTER) Transect cruises, ongoing since 2018.
 
-Three instrument types are covered: a Star-Oddi DST centi-TD temperature-depth recorder (TDR) deployed on most cruises since 2018; a SeaBird SBE19plus V2 CTD mounted on the Bongo wire for EN668 (summer 2021) and EN706 (summer 2023); and a Kongsberg PX Universal depth/temperature sensor (SR15 receiver) deployed alongside the TDR starting with AE2426 (fall 2024).
+Three instrument types are covered: a Star-Oddi DST centi-TD temperature-depth recorder (TDR) deployed on most cruises since 2018; a SeaBird SBE19plus V2 CTD mounted on the Bongo wire for EN668 (summer 2021) and EN706 (summer 2023); and a Kongsberg Simrad PX Universal depth/temperature sensor (SR15 receiver) deployed with the TDR starting with AE2426 (fall 2024).
 
 The processed outputs from this pipeline are published as a data package on the Environmental Data Initiative (EDI) repository. [PLACEHOLDER: DOI]
 
@@ -17,7 +17,7 @@ R/
 ├── 02_tdr_tidy.R             read, clean, label, and QC all TDR data
 ├── 02_ctd_bongo_tidy.R       read, clean, label, and QC CTD CNV files
 ├── 02_px_sensor_tidy.R       read, clean, label, and QC PX sensor CSVs
-├── 03_tdr_offsets.R          compute TDR-CTD depth offsets via NES-LTER API
+├── 03_tdr_offsets.R          compute TDR-CTD depth offsets
 └── 04_instrument_coverage.R  [IN PROGRESS] coverage heatmap and summaries
 └── 04_bin.R                  [IN PROGRESS]
 data/
@@ -56,7 +56,7 @@ Helper functions used across scripts are in `R/00_helpers.R`.
 
 ## Instrument and cruise coverage
 
-### TDR (Star-Oddi DST centi-TD)
+### TDR ([Star-Oddi DST centi-TD](https://vocab.nerc.ac.uk/collection/L22/current/TOOL0383/))
 
 Recording interval: 1 second. Two TDR serial numbers used across the time series (9447 and 11871).
 
@@ -64,14 +64,14 @@ Recording interval: 1 second. Two TDR serial numbers used across the time series
 |--------|---------|
 | Data available | EN608, EN617, EN627, EN644, EN649, EN655, EN657, AT46, EN687, HRS2303, EN706, AR77, EN712, EN715, EN720, AE2426, EN727, AR88, AR92, AR95, AR99 |
 | No data found | EN661, EN695 |
-| Not deployed | AR63, AR38, AR32 |
+| TDR not deployed | AR63, AR38, AR32 |
 | CTD used instead | EN668 |
 
-### CTD (SeaBird SBE19plus V2, serial no. 8120)
+### CTD ([SeaBird SBE19plus V2 SEACAT](https://vocab.nerc.ac.uk/collection/L22/current/TOOL0871/)), serial no. 8120)
 
 Recording interval: 4 Hz (0.25 seconds). Available for EN668 (no TDR) and EN706 (also has TDR).
 
-### PX sensor (Kongsberg PX Universal D/T, SR15 receiver, serial no. 274571)
+### PX sensor ([Kongsberg Simrad PX Universal](https://vocab.nerc.ac.uk/collection/L22/current/TOOL1797/)), serial no. 274571)
 
 Recording interval: 2 seconds (most cruises); 4 seconds (AR99). Deployed with TDR starting AE2426.
 

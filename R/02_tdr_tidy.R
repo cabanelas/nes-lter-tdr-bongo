@@ -4,7 +4,7 @@
 ##  Script:  02_tdr_tidy.R
 ##  Author:  Alexandra Cabanelas
 ##
-## TDR == Star-Oddi DST centi-TD
+##  TDR == Star-Oddi DST centi-TD temperature and depth recorder
 ##  Purpose: Read per cast CSV files from all cruise TDR folders, tidy data,
 ##           detect multiple casts, label downcast/upcast, export RDS & csv
 ##
