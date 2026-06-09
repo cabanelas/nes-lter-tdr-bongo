@@ -188,6 +188,24 @@ xml_info %>%
   filter(offset_1 != "" | offset_2 != "" | offset_3 != "") %>%
   select(cruise, file, offset_1, offset_2, offset_3)
 # no offsets 
+
+read_xml(xml_files[1]) %>% {
+  tibble(
+    system_name       = xml_find_first(., ".//system_name")       %>% xml_text(),
+    user              = xml_find_first(., ".//user")              %>% xml_text(),
+    date              = xml_find_first(., ".//date")              %>% xml_text(),
+    source_name       = xml_find_first(., ".//source_name")       %>% xml_text(),
+    source_type       = xml_find_first(., ".//source_type")       %>% xml_text(),
+    sensor_type       = xml_find_first(., ".//type")              %>% xml_text(),
+    update_rate       = xml_find_first(., ".//update_rate")       %>% xml_text(),
+    basic_type_1      = xml_find_first(., ".//basic_type_sensor_1") %>% xml_text(),
+    basic_type_2      = xml_find_first(., ".//basic_type_sensor_2") %>% xml_text(),
+    basic_type_3      = xml_find_first(., ".//basic_type_sensor_3") %>% xml_text(),
+    variable_ch1      = xml_find_first(., ".//variable_channel_1") %>% xml_text(),
+    variable_ch2      = xml_find_first(., ".//variable_channel_2") %>% xml_text(),
+    variable_ch3      = xml_find_first(., ".//variable_channel_3") %>% xml_text()
+  )
+}
 rm(xml_info, xml_files)
 
 ## ------------------------------------------ ##
