@@ -4,23 +4,25 @@
 ##  Script:  02_tdr_tidy.R
 ##  Author:  Alexandra Cabanelas
 ##
+## TDR == Star-Oddi DST centi-TD
 ##  Purpose: Read per cast CSV files from all cruise TDR folders, tidy data,
 ##           detect multiple casts, label downcast/upcast, export RDS & csv
 ##
 ##  Get CSVs for DAT-only cruises (EN608, EN627, EN644) run 01_tdr_dat_to_csv.R
-## 
+##  Functions are in 00_helpers.R
+##
 ##  Input:   data/raw/tdr_data/<CRUISE>_TDR/*.csv   (one CSV per bongo tow)
 ##           data/raw/elog_zoop_tows_thruAR99_2026-04-14.csv
 ##                    from nes-lter-api-pulls.Rproj; 01_elog_pull.R
 ##           data/raw/all-nes-lter-bongologs-20260526.csv
 ##                    from nes-lter-tow-meta-v3.Rproj; 01_merge_bongo_logs.R
 ##                          
-##  Output: FIX RDS**** data/processed/<CRUISE>_tdr_processed.csv  (per cruise)
-##           data/processed/allTDRdata.csv              (combined)
-##           data/processed/tdr_ctd_tests.csv            
+##  Output: NOT EXPORTED**** data/processed/<CRUISE>_tdr_processed.csv  (per cruise)
+##          data/processed/tdr_data_no_offset_Sys.Date.rds (all cruises)
+##          data/processed/tdr_data_no_offset.csv          (all cruises)
+##          data/processed/tdr_ctd_tests.csv               (for 03_tdr_offsets.R)
 ###############################################################
 
-#####################################EN706 most likely bad -- CHECK
 ## ------------------------------------------ ##
 # includes the following cruises (21): 
 # 2018 = EN608, EN617
@@ -1593,3 +1595,9 @@ write_csv(tdr_data, here(OUT_DIR, "tdr_data_no_offset.csv"))
 #   filter(tdr_binned, cruise == cr) %>% write_csv(out_path)
 #   message("  Saved: ", basename(out_path))
 # })
+
+################################################################################
+# go to -----------> 03_tdr_offsets.R
+#           OR     > 02_px_sensor_tidy.R
+#           OR     > 02_ctd_bongo_tidy.R 
+################################################################################
