@@ -44,7 +44,7 @@
 ## EN668 (summer 2021) CTD was used; no tdr data found
 ## EN695 (winter 2023) tdr was used; no tdr data found 
 ## ------------------------------------------ ##
-# no TDR data for: EN661, AR63*, AR38, AR32, EN715, EN695, EN668 (CTD only)
+# no TDR data for: EN661, AR63*, AR38, AR32, EN695, EN668 (CTD only)
 
 # .DAT files only, csv created in 01_tdr_dat_to_csv.R: EN644, EN627, EN608
 # xlsx files converted to csv in 01_tdr_dat_to_csv.R

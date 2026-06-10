@@ -24,6 +24,7 @@
 
 # CTD data available for: EN668 (no TDR) and EN706 (also has TDR)
 # CTD sampling interval is uniformly 0.25 sec (4 Hz) across all casts and cruises
+# typo: EN668 L9 B14 has files labeled as B15. B14 is correct. fixed here
 
 ## ------------------------------------------ ##
 ##  Packages               ----
