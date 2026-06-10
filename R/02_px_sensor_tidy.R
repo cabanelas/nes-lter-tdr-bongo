@@ -519,7 +519,7 @@ px_data_bongo %>%
 # should be 0
 
 ## ------------------------------------------ ##
-##  check timestamps??          ----
+##  Check timestamps          ----
 ## ------------------------------------------ ## 
 px_time_check <- px_data_bongo %>%
   group_by(cruise, station, cast) %>%
