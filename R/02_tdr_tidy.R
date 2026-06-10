@@ -11,16 +11,20 @@
 ##  Get CSVs for DAT-only cruises (EN608, EN627, EN644) run 01_tdr_dat_to_csv.R
 ##  Functions are in 00_helpers.R
 ##
-##  Input:   data/raw/tdr_data/<CRUISE>_TDR/*.csv   (one CSV per bongo tow)
-##           data/raw/elog_zoop_tows_thruAR99_2026-04-14.csv
-##                    from nes-lter-api-pulls.Rproj; 01_elog_pull.R
-##           data/raw/all-nes-lter-bongologs-20260526.csv
-##                    from nes-lter-tow-meta-v3.Rproj; 01_merge_bongo_logs.R
+##  Input:  data/raw/tdr_data/<CRUISE>_TDR/*.csv   (one CSV per bongo tow)
+##          data/raw/elog_zoop_tows_thruAR99_2026-04-14.csv
+##                  from nes-lter-api-pulls.Rproj; 01_elog_pull.R
+##          data/raw/all-nes-lter-bongologs-20260526.csv
+##                  from nes-lter-tow-meta-v3.Rproj; 01_merge_bongo_logs.R
 ##                          
 ##  Output: NOT EXPORTED**** data/processed/<CRUISE>_tdr_processed.csv  (per cruise)
 ##          data/processed/tdr_data_no_offset_Sys.Date.rds (all cruises)
 ##          data/processed/tdr_data_no_offset.csv          (all cruises)
 ##          data/processed/tdr_ctd_tests.csv               (for 03_tdr_offsets.R)
+##          figures/tdr_profiles_raw_check.pdf
+##          figures/tdr_profiles_labeled_8a.pdf
+##          figures/tdr_profiles_trimmed_9c.pdf
+##          figures/tdr_profiles_final_11.pdf
 ###############################################################
 
 ## ------------------------------------------ ##
@@ -48,6 +52,10 @@
 # CTD data available for: EN668 (no TDR) and EN706
 # PxSensor data available starting AE2426
 
+# AR95 AR99 duplicate timestamps: starting with recent cruises the 20-µm ring net
+# is deployed separately from the Bongo rather than attached above it,
+# resulting in separate TDR casts for the same station (e.g. B1 and R1).
+
 ## ------------------------------------------ ##
 ##  Packages               ----
 ## ------------------------------------------ ##
@@ -57,7 +65,7 @@ library(zoo)      # for rollmean in auto_split_casts
 library(glue)     # for glue() in detect_and_split plots
 library(conflicted)
 
-## Run sessionInfo() and save output to document package versions:
+## Run sessionInfo() and save output to document package versions
 ## > writeLines(capture.output(sessionInfo()), "session_info.txt")
 
 source(here("R", "00_helpers.R"))
@@ -166,7 +174,7 @@ all_data <- all_data %>%
   mutate(
     # handle both character timestamps and Excel serial-date numerics
     # after forcing as.character() in read_tdr_csv, numeric serials come in
-    # as strings like "45603.2" — detect with regex before parsing
+    # as strings (45603.2) detect with regex before parsing
     date_time = case_when(
       grepl("^\\d{5}\\.?\\d*$", date_time) ~
         as.POSIXct((as.numeric(date_time) - 25569) * 86400,
@@ -253,7 +261,7 @@ gap_diagnostics %>%
 rm(gap_diagnostics)
 
 # --- depth profile plots per cruise ----
-pdf(here("figures", "raw_tdr_profiles_check.pdf"),
+pdf(here("figures", "tdr_profiles_raw_check.pdf"),
     width = 14, height = 10)
 
 for (cr in sort(unique(all_data$cruise))) {
@@ -368,16 +376,19 @@ all_data <- all_data %>%
 # verify
 all_data %>%
   filter(
-    (cruise == "AT46"   & station == "L6"  & cast == "B6")  |
-      (cruise == "AE2426" & station == "L11" & cast == "B10") |
-      (cruise == "EN657"  & station == "L9"  & cast == "B14") |
-      (cruise == "EN706"  & station == "L7"  & cast == "B14")
+    (cruise == "AT46"     & station == "L6")  |
+      (cruise == "AE2426" & station == "L11") |
+      (cruise == "EN657"  & station == "L9" ) |
+      (cruise == "EN706"  & station == "L7" )
   ) %>%
   distinct(cruise, station, cast)
 
 ## ------------------------------------------ ##
 ##  4. Isolate TDR-CTD bench tests   ----
 ## ------------------------------------------ ##
+# at a couple of cruises; the TDR was attached to the shiboard/regular 
+# CTD cast to then compare max depth between CTD and TDR and apply depth 
+# offset if needed. this is dealt with in 03_tdr_offsets
 
 # u9a (AR92) == TDR-CTD test
 tdr_test <- filter(all_data,
@@ -470,6 +481,8 @@ timestamp_check %>%
     .groups = "drop"
   ) %>%
   arrange(desc(abs(median_deploy_offset)))
+# in some more recent cruises the laptop wasnt set up to UTC/TDR recorded
+# local time, need to adjust
 
 timestamp_check %>%
   filter(flag_no_elog, !grepl("_\\d+$", cast)) %>%
@@ -626,7 +639,7 @@ all_data %>%
 ## --- Plot depth profiles for all auto-split casts (for manual review) ---
 split_casts <- all_data %>%
   filter(grepl("_\\d+$", cast)) %>%
-  mutate(base_cast = sub("_\\d+$", "", cast))   # e.g. "B13_1" -> "B13"
+  mutate(base_cast = sub("_\\d+$", "", cast))   # e.g. B13_1 -> B13
 
 # one panel per cruise+station+base_cast combo
 split_groups <- split_casts %>%
@@ -953,7 +966,7 @@ all_data %>%
 ## ------------------------------------------ ##
 # profiles (predeploy / downcast / upcast) to PDF.
 
-pdf(here("figures", "labeled_tdr_profiles_check_8a.pdf"),
+pdf(here("figures", "tdr_profiles_labeled_8a.pdf"),
     width = 14, height = 10)
 
 for (cr in sort(unique(all_data$cruise))) {
@@ -1024,8 +1037,6 @@ meta_times %>%
   ) %>%
   count(has_deploy, has_recover) %>%
   arrange(desc(has_deploy), desc(has_recover))
-
-rm(meta)
 
 ## ------------------------------------------ ##
 ##  Manually fix some times based on logsheet ----
@@ -1216,7 +1227,7 @@ rm(manual_fixes, start_fixes, end_fixes)
 ##  9c. Post-trim profile plots  ----
 ## ------------------------------------------ ##
 
-pdf(here("figures", "posttrim_tdr_profiles_check_9c.pdf"),
+pdf(here("figures", "tdr_profiles_trimmed_9c.pdf"),
     width = 14, height = 10)
 
 for (cr in sort(unique(tdr_trim$cruise))) {
@@ -1251,9 +1262,6 @@ rm(df, p, cr)
 ## ------------------------------------------ ##
 ##   10. Add notes column           ----
 ## ------------------------------------------ ##
-## ------------------------------------------ ##
-##  Cast-level quality notes  ----
-## ------------------------------------------ ##
 
 cast_notes <- tribble(
   ~cruise,  ~station, ~cast, ~note_code,        ~note_detail,
@@ -1277,6 +1285,9 @@ rm(cast_notes, tdr_trim)
 ## ------------------------------------------ ##
 ##   11. Add recording interval column  ----
 ## ------------------------------------------ ##
+# different than PxSensor data and the 2 CTD-Bongo casts
+# TDR recording interval is nominally 1 second but varies across casts;
+# tdr_sampling_interval_sec documents the actual per-cast interval
 cast_intervals <- tdr_notes %>%
   arrange(cruise, station, cast, date_time) %>%
   group_by(cruise, station, cast) %>%
@@ -1292,7 +1303,7 @@ tdr_data <- tdr_notes %>%
   left_join(cast_intervals, by = c("cruise", "station", "cast"))
 
 # plot
-pdf(here("figures", "posttrim_tdr_profiles_11.pdf"),
+pdf(here("figures", "tdr_profiles_final_11.pdf"),
     width = 14, height = 10)
 
 for (cr in sort(unique(tdr_data$cruise))) {
@@ -1411,7 +1422,7 @@ cast_qc <- tdr_data %>%
   ) %>%
   mutate(
     # cast-level flags
-    flag_too_short      = duration_min < 5,          # < 5 min is suspicious
+    flag_too_short      = duration_min < 3,           # < 3 min is suspicious; possible at MVCO
     flag_too_long       = duration_min > 120,         # > 2 hrs is suspicious
     flag_shallow        = max_depth_m < 15,           # barely went down
     flag_temp_suspect   = temp_range_C > 15,          # >15 deg range in one cast
@@ -1453,20 +1464,37 @@ tdr_data %>%
 
 tdr_data %>%
   filter(down_up == "downcast", depth_m < 5) %>%
-  mutate(month = lubridate::month(date_time),
-         year  = lubridate::year(date_time)) %>%
-  ggplot(aes(x = month, y = temp_C, color = factor(station))) +
-  geom_point() +
-  scale_x_continuous(breaks = 1:12) +
-  labs(title = "Near-surface temperature by month",
-       x = "Month", y = "Temp (°C)", color = "Station") +
+  mutate(month = lubridate::month(date_time)) %>%
+  ggplot(aes(x = factor(month), y = temp_C, fill = factor(month))) +
+  geom_violin(alpha = 0.6, quantiles = c(0.25, 0.5, 0.75)) +
+  geom_jitter(width = 0.15, size = 0.5, alpha = 0.4, color = "grey30") +
+  scale_x_discrete(labels = month.abb) +
+  scale_fill_viridis_d(guide = "none") +
+  labs(title = "Near-surface temperature by month (depth < 5m, downcast)",
+       x = NULL, y = "Temp (°C)") +
+  theme_minimal()
+
+tdr_data %>%
+  filter(down_up == "downcast", station != "u11c") %>%
+  group_by(cruise, station, cast) %>%
+  mutate(max_depth = max(depth_m, na.rm = TRUE)) %>%
+  filter(depth_m >= max_depth - 5) %>%
+  ungroup() %>%
+  mutate(month = lubridate::month(date_time)) %>%
+  ggplot(aes(x = factor(month), y = temp_C, fill = factor(month))) +
+  geom_violin(alpha = 0.6, quantiles = c(0.25, 0.5, 0.75)) +
+  geom_jitter(width = 0.15, size = 0.5, alpha = 0.4, color = "grey30") +
+  scale_x_discrete(labels = month.abb) +
+  scale_fill_viridis_d(guide = "none") +
+  labs(title = "Near-bottom temperature by month (within 5m of max depth, downcast)",
+       x = NULL, y = "Temp (°C)") +
   theme_minimal()
 
 temp_jumps <- tdr_data %>%
   arrange(cruise, station, cast, date_time) %>%
   group_by(cruise, station, cast) %>%
   mutate(temp_diff = abs(temp_C - dplyr::lag(temp_C))) %>%
-  filter(!is.na(temp_diff), temp_diff > 5) %>%  # >5°C between consecutive obs
+  filter(!is.na(temp_diff), temp_diff > 5) %>%  # >5C between consecutive obs
   select(cruise, station, cast, date_time, temp_C, temp_diff, depth_m) %>%
   ungroup()
 
@@ -1505,14 +1533,17 @@ tdr_data %>%
   theme_minimal()
 
 tdr_data %>%
-  filter(down_up == "downcast", depth_m < 5,
-         station != "u11c") %>%
+  filter(down_up == "downcast", station != "u11c") %>%
+  group_by(cruise, station, cast) %>%
+  mutate(max_depth = max(depth_m, na.rm = TRUE)) %>%
+  filter(depth_m >= max_depth - 5) %>%
+  ungroup() %>%
   mutate(month = lubridate::month(date_time, label = TRUE)) %>%
   ggplot(aes(x = month, y = temp_C)) +
   geom_boxplot(fill = "steelblue", alpha = 0.4, outlier.shape = NA) +
   geom_jitter(aes(color = cruise), width = 0.2, size = 1.5, alpha = 0.8) +
   facet_wrap(~station) +
-  labs(title = "Near-surface temperature by month",
+  labs(title = "Near-bottom temperature by month (within 5m of max depth, downcast)",
        x = "Month", y = "Temp (°C)", color = "Cruise") +
   theme_minimal() +
   guides(color = guide_legend(override.aes = list(size = 3)))
@@ -1531,6 +1562,43 @@ tdr_data %>%
   theme_minimal() +
   guides(color = guide_legend(override.aes = list(size = 3)))
 
+tdr_data %>%
+  filter(down_up == "downcast") %>%
+  group_by(cruise, station, cast) %>%
+  summarise(tdr_max_depth = max(depth_m, na.rm = TRUE), .groups = "drop") %>%
+  left_join(meta %>% mutate(cast = paste0("B", cast)),
+            by = c("cruise", "station", "cast")) %>%
+  ggplot(aes(x = depth_target, y = tdr_max_depth)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(slope = 1, intercept = 0, color = "firebrick", linetype = "dashed") +
+  labs(title = "TDR max depth vs logsheet target depth",
+       x = "Target depth (m)", y = "TDR max depth (m)") +
+  theme_minimal()
+
+tdr_data %>%
+  filter(station != "u11c") %>%
+  group_by(cruise, station, cast) %>%
+  summarise(duration_min = as.numeric(difftime(max(date_time),
+                                               min(date_time), units = "mins")),
+            .groups = "drop") %>%
+  mutate(station = factor(station, levels = c(paste0("L", 1:11), "MVCO"))) %>%
+  ggplot(aes(x = duration_min, fill = station)) +
+  geom_histogram(binwidth = 5, color = "white") +
+  scale_fill_viridis_d(name = "Station") +
+  labs(title = "Cast duration distribution by station",
+       x = "Duration (minutes)", y = "Count") +
+  theme_minimal()
+
+tdr_data %>%
+  distinct(cruise, station, cast, tdr_n_obs, tdr_sampling_interval_sec) %>%
+  ggplot(aes(x = reorder(cruise, tdr_n_obs), y = tdr_n_obs,
+             color = factor(tdr_sampling_interval_sec))) +
+  geom_jitter(width = 0.2, alpha = 0.7, size = 2.9) +
+  labs(title = "Observations per cast by cruise",
+       x = NULL, y = "n observations", color = "Interval (sec)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
 ## ------------------------------------------ ##
 ##  12d. Duplicate timestamp check       ----
 ## ------------------------------------------ ##
@@ -1548,14 +1616,16 @@ if (nrow(dup_times) > 0) {
     arrange(desc(n_dups)) %>%
     print(n = 20)
 }
+# these are fine its times when there are sub-second obs == duplicate timestamps
+# at 1-sec resolution 
 rm(dup_times, temp_jumps)
 
 ## ------------------------------------------ ##
 ##  12e. Downcast/upcast balance check   ----
 ## ------------------------------------------ ##
-# every cast should have both a downcast and upcast
+# most casts should have both a downcast and upcast
 
-known_upcast_only <- c("AE2426_L9_B12")  # from cast_notes
+known_upcast_only <- c("AE2426_L9_B12") 
 
 cast_coverage <- tdr_data %>%
   group_by(cruise, station, cast) %>%
@@ -1587,6 +1657,10 @@ saveRDS(tdr_data, here("data", "processed",
                        paste0("tdr_data_no_offset_", Sys.Date(), ".rds")))
 
 write_csv(tdr_data, here(OUT_DIR, "tdr_data_no_offset.csv"))
+
+# save file with colnames
+tibble(column = names(tdr_data)) %>%
+  write_csv(here("data", "processed", "tdr-column-headers.csv"))
 
 # per-cruise CSVs
 # message("Saving per-cruise CSVs ...")

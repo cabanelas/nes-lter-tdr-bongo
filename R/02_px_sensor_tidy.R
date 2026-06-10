@@ -4,16 +4,17 @@
 ##  Script:  02_px_sensor_tidy.R
 ##  Author:  Alexandra Cabanelas
 ##
+##  SIMRAD PX MultiSensor 
 ##  Purpose: Read raw PX Multisensor (SR15) measurements CSV files,
 ##           assign cruise/station/cast metadata via elog,
-##           filter out Isaacs-Kidd Midwater Trawl deployments,
+##           filter out Isaacs-Kidd Midwater Trawl (IKMT/MWT) deployments,
 ##           trim to elog deploy/recover windows, label downcast/upcast,
 ##           and export cleaned bongo-only PX sensor data.
 ##
 ##  Input:   data/raw/px_sensor/{cruise}_px_sensor/*.csv
 ##           data/raw/elog_zoop_tows_thruAR99_2026-04-14.csv
 ##                    (from nes-lter-api-pulls.Rproj; 01_elog_pull.R)
-##           NES-LTER API (https://github.com/WHOIGit/nes-lter-api-2/wiki) for MWT elog
+##           NES-LTER API2 (https://github.com/WHOIGit/nes-lter-api-2/wiki) for MWT elog
 ##  Output:  data/processed/px_data_bongo_YYYY-MM-DD.rds
 ##           data/processed/px_data_bongo.csv
 ##           figures/px_sensor_profiles_check.pdf
@@ -27,6 +28,14 @@
 # 2025 = EN727, AR88, AR92, AR95
 # 2026 = AR99, ***need to add HRS2601***
 ## ------------------------------------------ ##
+# PxSensor is generally not used at MVCO nor L1 -- too shallow 
+
+# AE2426 L2, L4, L6, L7, L8                          
+# AR88   L2, L3, L4, L5, L6, L7, L8, L9, L10, L11,    
+# AR92   L1, L2, L3, L4, L5, L6, L7, L8, L9, L10, L11, 
+# AR95   L1, L2, L3, L4, L5, L7, L8, L9, L10, L11,   
+# AR99   L3, L4, L5, L6, L7, L8, L10                 
+# EN727  L3, L4, L5, L6, L7, L8, L10, L11   
 
 ## ------------------------------------------ ##
 ##  Packages               ----
@@ -396,19 +405,10 @@ cat("Matched to bongo (auto):   ", nrow(px_cast_meta), "\n")
 cat("Matched to bongo (manual): ", nrow(px_manual_bongo), "\n")
 cat("Matched to MWT (auto):     ", nrow(px_mwt), "\n")
 cat("Matched to MWT (manual):   ", nrow(px_manual_mwt), "\n")
-cat("Excluded (bad file):        1\n")
 cat("px_data_bongo rows:        ", nrow(px_data_bongo), "\n")
 cat("unique bongo casts:         ", n_distinct(paste(px_data_bongo$cruise, px_data_bongo$cast)), "\n")
 
-## all cast_starts should be accounted for
-accounted <- nrow(px_cast_meta) +    # 53 auto bongo
-  nrow(px_mwt) +          # 39 auto MWT (includes AR88 + EN727 L11)
-  nrow(px_manual_mwt) +   # 1  AR92 Tow7
-  1 +                     # 1  EN727 00:00:01 midnight (manual bongo, not in px_mwt)
-  1                       # 1  AR99 bad file
-
-cat("Accounted for:", accounted, "of", total, "\n")
-rm(px_mwt, px_manual_mwt, px_manual_bongo, accounted)
+rm(px_mwt, px_manual_mwt, px_manual_bongo)
 
 ## ------------------------------------------ ##
 ##   Plot all casts --- 
@@ -644,22 +644,109 @@ for (cr in sort(unique(px_data_bongo_final$cruise))) {
 dev.off()
 
 ## ------------------------------------------ ##
+##  check timestamps??          ----
+## ------------------------------------------ ## 
+## ------------------------------------------ ##
+##   Add notes column           ----
+## ------------------------------------------ ##
+px_cast_notes <- tribble(
+  ~cruise,  ~station, ~cast,  ~note_code,           ~note_detail,
+  ## missing or deleted bad data:
+  ## AR95 L6  B11:  px max 17m,  logsheet target 90m
+  ## AR99 L2  B3:   px max 7m,   logsheet target 39m
+  ## AR99 L9  B5:   px max 14m,  logsheet target 200m
+  ## EN727 L9 B11:  px max 21m,  logsheet target ~200m
+  ## AR99 L11 B9: No PX sensor data recorded; logsheet notes sensor did not record; logsheet max depth ~199m
+  # --- manual time trims: deep noise at start ---
+  # EN727 L8 B10 px_trimmed_start",   "Deep noise before 19:30:05 UTC trimmed; real cast 19:30:05 to 19:44:27",
+  # EN727 L5 B19 px_trimmed_start",   "Deep noise before 20:35:09 UTC trimmed; real cast 20:35:09 to 20:43:53",
+  # # AR92
+  #     L1 B1 weird cast shape but max depth there 
+  # --- incomplete upcast ---
+  "AR88",   "L10",    "B6",   "px_incomplete_upcast", "Upcast ends at ~150m; sensor stopped recording before recovery",
+  "AR88",   "L11",    "B9",   "px_incomplete_upcast", "Upcast ends at ~75m; sensor stopped recording before recovery",
+  "AR88",   "L8",     "B17",  "px_incomplete_upcast", "Upcast ends at ~118m; sensor stopped recording before recovery",
+  "AR92",   "L10",    "B8",   "px_incomplete_upcast", "Upcast ends at ~200m; sensor stopped recording before recovery",
+  "AR92",   "L11",    "B11",  "px_incomplete_upcast", "Upcast ends at ~185m; sensor stopped recording before recovery",
+  "AR92",   "L2",     "B2",   "px_incomplete_upcast", "Upcast ends at ~25m; sensor stopped recording before recovery",
+  "AR92",   "L8",     "B17",  "px_incomplete_upcast", "Upcast ends at ~80m; sensor stopped recording before recovery",
+  "AR92",   "L9",     "B20",  "px_incomplete_upcast", "Upcast ends at ~140m; sensor stopped recording before recovery",
+  "AR92",   "L7",     "B21",  "px_incomplete_upcast", "Upcast ends at ~80m; sensor stopped recording before recovery",
+  "AR92",   "L3",     "B22",  "px_incomplete_upcast", "Upcast ends at ~42m; sensor stopped recording before recovery",
+  "AR92",   "L6",     "B12",  "px_incomplete_upcast", "Upcast ends at ~48m; sensor stopped recording before recovery",
+  "AR95",   "L1",     "B1",   "px_incomplete_upcast", "Upcast ends at ~7.5m; sensor stopped recording before recovery",
+  "AR95",   "L4",     "B5",   "px_incomplete_upcast", "Upcast ends at ~22m; sensor stopped recording before recovery",
+  "AR95",   "L5",     "B6",   "px_incomplete_upcast", "Upcast ends at ~50m; sensor stopped recording before recovery",
+  "AR95",   "L10",    "B7",   "px_incomplete_upcast", "Upcast ends at ~25m; sensor stopped recording before recovery",
+  "AR95",   "L11",    "B10",  "px_incomplete_upcast", "Upcast ends at ~125m; sensor stopped recording before recovery",
+  "AR95",   "L8",     "B17",  "px_incomplete_upcast", "Upcast ends at ~52m; sensor stopped recording before recovery",
+  "AR99",   "L5",     "B4",   "px_incomplete_upcast", "Upcast ends at ~20m; sensor stopped recording before recovery",
+  "AR99",   "L10",    "B6",   "px_incomplete_upcast", "Upcast ends at ~25m; sensor stopped recording before recovery",
+  "AR99",   "L6",     "B10",  "px_incomplete_upcast", "Upcast ends at ~60m; sensor stopped recording before recovery",
+  "AR99",   "L4",     "B17",  "px_incomplete_upcast", "Upcast ends at ~50m; sensor stopped recording before recovery",
+  "AR99",   "L3",     "B18",  "px_incomplete_upcast", "Upcast ends at ~30m; sensor stopped recording before recovery",
+  "AR99",   "L7",     "B19",  "px_incomplete_upcast", "Upcast ends at ~100m; sensor stopped recording before recovery",
+  "AR99",   "L8",     "B20",  "px_incomplete_upcast", "Upcast ends at ~50m; sensor stopped recording before recovery",
+  "EN727",  "L4",     "B5",   "px_incomplete_upcast", "Upcast ends at ~30m; sensor stopped recording before recovery",
+  "EN727",  "L10",    "B9",   "px_incomplete_upcast", "Upcast ends at ~175m; sensor stopped recording before recovery",
+  "EN727",  "L6",     "B17",  "px_incomplete_upcast", "Upcast ends at ~40m; sensor stopped recording before recovery"
+)
+
+px_data_bongo_final <- px_data_bongo_final %>%
+  left_join(px_cast_notes, by = c("cruise", "station", "cast"))
+
+rm(px_cast_notes)
+
+## ------------------------------------------ ##
+##   Add recording interval column  ----
+## ------------------------------------------ ##
+# almost always 2 sec for PX sensor 
+## add sampling interval column
+px_intervals <- px_data_bongo_final %>%
+  arrange(cruise, station, cast, date_time) %>%
+  group_by(cruise, station, cast) %>%
+  mutate(interval_sec = as.numeric(difftime(date_time,
+                                            dplyr::lag(date_time),
+                                            units = "secs"))) %>%
+  summarise(
+    px_sampling_interval_sec = round(median(interval_sec, na.rm = TRUE)),
+    px_max_gap_sec           = round(max(interval_sec,    na.rm = TRUE)),
+    px_n_obs                 = n(),
+    .groups = "drop"
+  )
+
+px_data_bongo_final <- px_data_bongo_final %>%
+  left_join(px_intervals, by = c("cruise", "station", "cast"))
+
+rm(px_intervals)
+
+## ------------------------------------------ ##
 ##  QC checks                              ----
 ## ------------------------------------------ ##
-## naming consistency
+## ------------------------------------------ ##
+##  a. Naming consistency checks       ----
+## ------------------------------------------ ##
+## All these should not print anything (tibble 0 x 1)
+
+# cruise: should all be uppercase alphanumeric
 px_data_bongo_final %>%
   filter(!grepl("^[A-Z]{2,3}[0-9]+[A-Z]?$", cruise)) %>%
   distinct(cruise)
 
+# station: should be L + integer, MVCO
 px_data_bongo_final %>%
   filter(!grepl("^L[0-9]+$", station)) %>%
   distinct(cruise, station)
 
+# cast: should be B + integer
 px_data_bongo_final %>%
   filter(!grepl("^B[0-9]+$", cast)) %>%
   distinct(cruise, station, cast)
 
-## physical range checks
+## ------------------------------------------ ##
+##  b. Physical range checks (row-level) ----
+## ------------------------------------------ ##
+
 px_data_bongo_final %>%
   summarise(
     n_neg_depth  = sum(depth_m < 0, na.rm = TRUE),
@@ -683,6 +770,149 @@ px_data_bongo_final %>%
   ) %>%
   filter(!has_downcast | !has_upcast | max_depth < 15 | duration_min < 3) %>%
   arrange(cruise, station)
+
+## ------------------------------------------ ##
+##  c. Temporal checks (cast-level)     ----
+## ------------------------------------------ ##
+cast_qc_px <- px_data_bongo_final %>%
+  group_by(cruise, station, cast) %>%
+  summarise(
+    n_obs        = n(),
+    t_start      = min(date_time, na.rm = TRUE),
+    t_end        = max(date_time, na.rm = TRUE),
+    duration_min = as.numeric(difftime(max(date_time), min(date_time), units = "mins")),
+    max_depth_m  = max(depth_m,  na.rm = TRUE),
+    temp_min_C   = min(temp_C,   na.rm = TRUE),
+    temp_max_C   = max(temp_C,   na.rm = TRUE),
+    temp_range_C = temp_max_C - temp_min_C,
+    n_time_reversal = sum(diff(as.numeric(date_time)) < 0, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    flag_too_short     = duration_min < 3,
+    flag_too_long      = duration_min > 120,
+    flag_shallow       = max_depth_m < 15,
+    flag_temp_suspect  = temp_range_C > 15,
+    flag_time_reversal = n_time_reversal > 0,
+    flag_few_obs       = n_obs < 20
+  )
+
+cast_qc_px %>%
+  summarise(across(starts_with("flag_"), \(x) sum(x, na.rm = TRUE))) %>%
+  pivot_longer(everything(), names_to = "flag", values_to = "n_casts_flagged") %>%
+  filter(n_casts_flagged > 0) %>%
+  arrange(desc(n_casts_flagged))
+
+cast_qc_px %>%
+  filter(if_any(starts_with("flag_"), ~.)) %>%
+  select(cruise, station, cast, duration_min, max_depth_m,
+         temp_range_C, n_time_reversal, n_obs, starts_with("flag_")) %>%
+  arrange(cruise, station) %>%
+  print(n = Inf, width = Inf)
+
+## temp-depth profiles by month
+px_data_bongo_final %>%
+  filter(down_up == "downcast") %>%
+  mutate(month = lubridate::month(date_time, label = TRUE)) %>%
+  ggplot(aes(x = temp_C, y = depth_m, color = cruise)) +
+  geom_point(size = 0.3, alpha = 0.4) +
+  scale_y_reverse() +
+  facet_wrap(~month) +
+  labs(title = "PX temperature-depth profiles by month (downcast)",
+       x = "Temperature (°C)", y = "Depth (m)") +
+  theme_minimal()
+
+## large consecutive temp jumps
+temp_jumps_px <- px_data_bongo_final %>%
+  arrange(cruise, station, cast, date_time) %>%
+  group_by(cruise, station, cast) %>%
+  mutate(temp_diff = abs(temp_C - dplyr::lag(temp_C))) %>%
+  filter(!is.na(temp_diff), temp_diff > 5) %>%
+  select(cruise, station, cast, date_time, temp_C, temp_diff, depth_m) %>%
+  ungroup()
+
+message("Large consecutive temp jumps: ", nrow(temp_jumps_px))
+print(temp_jumps_px, n = 30)
+rm(temp_jumps_px)
+
+## max depth vs logsheet target
+# need meta loaded for this
+meta_px <- read_csv(file.path("data", "raw",
+                              "all-nes-lter-bongologs-20260526.csv"),
+                    show_col_types = FALSE) %>%
+  filter(cruise %in% unique(px_data_bongo_final$cruise)) %>%
+  mutate(cast = paste0("B", cast))
+
+px_data_bongo_final %>%
+  filter(down_up == "downcast") %>%
+  group_by(cruise, station, cast) %>%
+  summarise(px_max_depth = max(depth_m, na.rm = TRUE), .groups = "drop") %>%
+  left_join(meta_px %>% select(cruise, station, cast, depth_target),
+            by = c("cruise", "station", "cast")) %>%
+  ggplot(aes(x = depth_target, y = px_max_depth)) +
+  geom_point(alpha = 0.6) +
+  geom_abline(slope = 1, intercept = 0, color = "firebrick", linetype = "dashed") +
+  labs(title = "PX max depth vs logsheet target depth",
+       x = "Target depth (m)", y = "PX max depth (m)") +
+  theme_minimal()
+
+tdr_data %>%
+  filter(down_up == "downcast", station != "u11c") %>%
+  group_by(cruise, station, cast) %>%
+  mutate(max_depth = max(depth_m, na.rm = TRUE)) %>%
+  filter(depth_m >= max_depth - 5) %>%
+  ungroup() %>%
+  mutate(month = lubridate::month(date_time, label = TRUE)) %>%
+  ggplot(aes(x = month, y = temp_C)) +
+  geom_boxplot(fill = "steelblue", alpha = 0.4, outlier.shape = NA) +
+  geom_jitter(aes(color = cruise), width = 0.2, size = 1.5, alpha = 0.8) +
+  facet_wrap(~station) +
+  labs(title = "Near-bottom temperature by month (within 5m of max depth, downcast)",
+       x = "Month", y = "Temp (°C)", color = "Cruise") +
+  theme_minimal() +
+  guides(color = guide_legend(override.aes = list(size = 3)))
+
+rm(meta_px)
+
+## ------------------------------------------ ##
+##  d. Duplicate timestamp check       ----
+## ------------------------------------------ ##
+dup_times_px <- px_data_bongo_final %>%
+  group_by(cruise, station, cast, date_time) %>%
+  filter(n() > 1) %>%
+  ungroup() %>%
+  distinct(cruise, station, cast, date_time)
+
+message("Duplicate timestamps: ", nrow(dup_times_px))
+rm(dup_times_px)
+
+## ------------------------------------------ ##
+##  e. Downcast/upcast balance check   ----
+## ------------------------------------------ ##
+# most casts should have both a downcast and upcast
+cast_coverage_px <- px_data_bongo_final %>%
+  group_by(cruise, station, cast) %>%
+  summarise(
+    has_downcast = any(down_up == "downcast"),
+    has_upcast   = any(down_up == "upcast"),
+    .groups = "drop"
+  ) %>%
+  filter(!has_downcast | !has_upcast)
+
+if (nrow(cast_coverage_px) > 0) {
+  message("Casts missing downcast or upcast:")
+  print(cast_coverage_px)
+} else {
+  message("All casts have both downcast and upcast labels.")
+}
+
+rm(cast_qc_px, cast_coverage_px)
+
+## stations available per cruise
+px_data_bongo_final %>%
+  distinct(cruise, station) %>%
+  group_by(cruise) %>%
+  summarise(stations = paste(sort(station), collapse = ", "), .groups = "drop")
 
 ## ------------------------------------------ ##
 ##   Save output         ----
