@@ -14,6 +14,8 @@
 ##  Input:   data/raw/px_sensor/{cruise}_px_sensor/*.csv
 ##           data/raw/elog_zoop_tows_thruAR99_2026-04-14.csv
 ##                    (from nes-lter-api-pulls.Rproj; 01_elog_pull.R)
+##          data/raw/all-nes-lter-bongologs-20260526.csv
+##                  from nes-lter-tow-meta-v3.Rproj; 01_merge_bongo_logs.R
 ##           NES-LTER API2 (https://github.com/WHOIGit/nes-lter-api-2/wiki) for MWT elog
 ##  Output:  data/processed/px_data_bongo_YYYY-MM-DD.rds
 ##           data/processed/px_data_bongo.csv
@@ -517,6 +519,47 @@ px_data_bongo %>%
 # should be 0
 
 ## ------------------------------------------ ##
+##  check timestamps??          ----
+## ------------------------------------------ ## 
+px_time_check <- px_data_bongo %>%
+  group_by(cruise, station, cast) %>%
+  summarise(
+    px_start     = min(date_time, na.rm = TRUE),
+    px_end       = max(date_time, na.rm = TRUE),
+    px_duration  = as.numeric(difftime(max(date_time), min(date_time), units = "mins")),
+    .groups = "drop"
+  ) %>%
+  left_join(
+    px_bongo_cast_meta_final %>% select(cruise, station, cast, elog_deploy, elog_recover),
+    by = c("cruise", "station", "cast")
+  ) %>%
+  mutate(
+    offset_deploy_min  = as.numeric(difftime(px_start, elog_deploy,  units = "mins")),
+    offset_recover_min = as.numeric(difftime(px_end,   elog_recover, units = "mins")),
+    elog_duration      = as.numeric(difftime(elog_recover, elog_deploy, units = "mins")),
+    duration_diff_min  = px_duration - elog_duration,
+    flag_large_offset  = abs(offset_deploy_min) > 30
+  )
+
+px_time_check %>%
+  group_by(cruise) %>%
+  summarise(
+    n_casts              = n(),
+    n_flag_large_offset  = sum(flag_large_offset, na.rm = TRUE),
+    median_deploy_offset = median(offset_deploy_min, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(abs(median_deploy_offset)))
+
+px_time_check %>%
+  filter(flag_large_offset) %>%
+  select(cruise, station, cast, px_start, elog_deploy, offset_deploy_min,
+         px_end, elog_recover, offset_recover_min) %>%
+  print(n = Inf, width = Inf)
+
+rm(px_time_check)
+
+## ------------------------------------------ ##
 ##  Plot     ----
 ## ------------------------------------------ ##
 px_maxdepth2 <- px_data_bongo2 %>%
@@ -644,9 +687,6 @@ for (cr in sort(unique(px_data_bongo_final$cruise))) {
 dev.off()
 
 ## ------------------------------------------ ##
-##  check timestamps??          ----
-## ------------------------------------------ ## 
-## ------------------------------------------ ##
 ##   Add notes column           ----
 ## ------------------------------------------ ##
 px_cast_notes <- tribble(
@@ -743,6 +783,11 @@ px_data_bongo_final %>%
   filter(!grepl("^B[0-9]+$", cast)) %>%
   distinct(cruise, station, cast)
 
+# down_up: only valid labels
+px_data_bongo_final %>%
+  filter(!down_up %in% c("predeploy", "downcast", "upcast")) %>%
+  distinct(down_up)
+
 ## ------------------------------------------ ##
 ##  b. Physical range checks (row-level) ----
 ## ------------------------------------------ ##
@@ -810,6 +855,10 @@ cast_qc_px %>%
   arrange(cruise, station) %>%
   print(n = Inf, width = Inf)
 
+## ------------------------------------------ ##
+##  Plots       ----
+## ------------------------------------------ ##
+
 ## temp-depth profiles by month
 px_data_bongo_final %>%
   filter(down_up == "downcast") %>%
@@ -837,7 +886,7 @@ rm(temp_jumps_px)
 
 ## max depth vs logsheet target
 # need meta loaded for this
-meta_px <- read_csv(file.path("data", "raw",
+meta <- read_csv(file.path("data", "raw",
                               "all-nes-lter-bongologs-20260526.csv"),
                     show_col_types = FALSE) %>%
   filter(cruise %in% unique(px_data_bongo_final$cruise)) %>%
@@ -847,17 +896,17 @@ px_data_bongo_final %>%
   filter(down_up == "downcast") %>%
   group_by(cruise, station, cast) %>%
   summarise(px_max_depth = max(depth_m, na.rm = TRUE), .groups = "drop") %>%
-  left_join(meta_px %>% select(cruise, station, cast, depth_target),
+  left_join(meta %>% select(cruise, station, cast, depth_target),
             by = c("cruise", "station", "cast")) %>%
   ggplot(aes(x = depth_target, y = px_max_depth)) +
   geom_point(alpha = 0.6) +
   geom_abline(slope = 1, intercept = 0, color = "firebrick", linetype = "dashed") +
-  labs(title = "PX max depth vs logsheet target depth",
-       x = "Target depth (m)", y = "PX max depth (m)") +
+  labs(x = "Target depth (m)", y = "PX max depth (m)") +
   theme_minimal()
 
-tdr_data %>%
-  filter(down_up == "downcast", station != "u11c") %>%
+# near-bottom boxplot by station
+px_data_bongo_final %>%
+  filter(down_up == "downcast") %>%
   group_by(cruise, station, cast) %>%
   mutate(max_depth = max(depth_m, na.rm = TRUE)) %>%
   filter(depth_m >= max_depth - 5) %>%
@@ -867,12 +916,29 @@ tdr_data %>%
   geom_boxplot(fill = "steelblue", alpha = 0.4, outlier.shape = NA) +
   geom_jitter(aes(color = cruise), width = 0.2, size = 1.5, alpha = 0.8) +
   facet_wrap(~station) +
-  labs(title = "Near-bottom temperature by month (within 5m of max depth, downcast)",
+  labs(title = "PX near-bottom temperature by month (within 5m of max depth, downcast)",
        x = "Month", y = "Temp (°C)", color = "Cruise") +
   theme_minimal() +
   guides(color = guide_legend(override.aes = list(size = 3)))
 
-rm(meta_px)
+# near-bottom 
+px_data_bongo_final %>%
+  filter(down_up == "downcast") %>%
+  group_by(cruise, station, cast) %>%
+  mutate(max_depth = max(depth_m, na.rm = TRUE)) %>%
+  filter(depth_m >= max_depth - 5) %>%
+  ungroup() %>%
+  mutate(month = lubridate::month(date_time)) %>%
+  ggplot(aes(x = factor(month), y = temp_C, fill = factor(month))) +
+  geom_violin(alpha = 0.6, quantiles = c(0.25, 0.5, 0.75)) +
+  geom_jitter(width = 0.15, size = 0.5, alpha = 0.4, color = "grey30") +
+  scale_x_discrete(labels = month.abb) +
+  scale_fill_viridis_d(guide = "none") +
+  labs(title = "PX near-bottom temperature by month (within 5m of max depth, downcast)",
+       x = NULL, y = "Temp (°C)") +
+  theme_minimal()
+
+rm(meta)
 
 ## ------------------------------------------ ##
 ##  d. Duplicate timestamp check       ----
@@ -923,3 +989,12 @@ saveRDS(px_data_bongo_final,
 
 write_csv(px_data_bongo_final,
           here("data", "processed", "px_data_bongo.csv"))
+
+tibble(column = names(px_data_bongo_final)) %>%
+  write_csv(here("data", "processed", "px_column_reference.csv"))
+
+################################################################################
+# go to -----------> 03_tdr_offsets.R
+#           OR     > 02_px_sensor_tidy.R
+#           OR     > 02_ctd_bongo_tidy.R 
+################################################################################

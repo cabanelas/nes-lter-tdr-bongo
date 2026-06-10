@@ -49,11 +49,11 @@
 # .DAT files only, csv created in 01_tdr_dat_to_csv.R: EN644, EN627, EN608
 # xlsx files converted to csv in 01_tdr_dat_to_csv.R
 
-# CTD data available for: EN668 (no TDR) and EN706
-# PxSensor data available starting AE2426
+# CTD data available for: EN668 (no TDR) and EN706  [02_ctd_bongo_tidy.R]
+# PxSensor data available starting AE2426           [02_px_sensor_tidy.R]
 
-# AR95 AR99 duplicate timestamps: starting with recent cruises the 20-µm ring net
-# is deployed separately from the Bongo rather than attached above it,
+# AR95 AR99 starting with recent cruises the 20-µm ring net is deployed 
+# separately from the Bongo rather than attached above it,
 # resulting in separate TDR casts for the same station (e.g. B1 and R1).
 
 ## ------------------------------------------ ##

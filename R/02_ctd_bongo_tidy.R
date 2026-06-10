@@ -4,22 +4,25 @@
 ##  Script:  02_ctd_bongo_tidy.R
 ##  Author:  Alexandra Cabanelas
 ##
-##  Purpose: Read raw SeaBird SBE19plus CNV files from bongo-attached
-##           CTD deployments, assign cruise/station/cast metadata,
-##           inspect and resolve multi-version casts (EN706 L11 B9),
-##           label downcast/upcast, and export cleaned CTD-bongo data.
+##  Purpose: Read raw SeaBird SBE19plus V2 CNV files from bongo-attached
+##           CTD deployments, assign cruise/station/cast metadata, tidy,
+##           label downcast/upcast, export cleaned CTD-bongo data
 ##
 ##  Cruises: EN668 (2021), EN706 (2023)
 ##
-##  Input:   data/raw/ctd_bongo/SBE19plus_EN668/*.cnv
-##           data/raw/ctd_bongo/EN706_CTD_Data/raw/*.cnv
+##  Input:  data/raw/ctd_bongo/SBE19plus_EN668/*.cnv
+##          data/raw/ctd_bongo/EN706_CTD_Data/raw/*.cnv
+##          data/raw/all-nes-lter-bongologs-20260526.csv
+##                  from nes-lter-tow-meta-v3.Rproj; 01_merge_bongo_logs.R
 ##
-##  Output:  data/processed/ctd_bongo_data_YYYY-MM-DD.rds
-##           data/processed/ctd_bongo_data.csv
-##           figures/ctd_bongo_profiles_check.pdf
-##           figures/ctd_bongo_profiles_labeled.pdf
+##  Output: data/processed/ctd_bongo_data_YYYY-MM-DD.rds
+##          data/processed/ctd_bongo_data.csv
+##          figures/ctd_bongo_profiles_raw_check.pdf
+##          figures/ctd_bongo_profiles_labeled.pdf
+##          figures/ctd_bongo_profiles_final.pdf
 ###############################################################
-# CTD data available for: EN668 (no TDR) and EN706
+
+# CTD data available for: EN668 (no TDR) and EN706 (also has TDR)
 # CTD sampling interval is uniformly 0.25 sec (4 Hz) across all casts and cruises
 
 ## ------------------------------------------ ##
@@ -28,6 +31,8 @@
 library(tidyverse)
 library(here)
 library(oce) # optional for TS plot at end
+
+source(here("R", "00_helpers.R"))
 
 ## ------------------------------------------ ##
 ##  Files available         ----
@@ -117,6 +122,10 @@ ctd_cnv_data <- map_dfr(cnv_files, function(f) {
   )
 })
 
+## ------------------------------------------ ##
+##  Check data          ----
+## ------------------------------------------ ##
+
 glimpse(ctd_cnv_data)
 
 ctd_cnv_data %>%
@@ -136,6 +145,8 @@ ctd_cnv_data %>%
   arrange(cruise, station, cast) %>%
   print(n = Inf)
 
+rm(cnv_files, ctd_files)
+
 ## ------------------------------------------ ##
 ##  Add time         ----
 ## ------------------------------------------ ##
@@ -148,7 +159,7 @@ ctd_cnv_data <- ctd_cnv_data %>%
 ## ------------------------------------------ ##
 # created in nes-lter-tow-meta-v3.Rproj; 01_merge_bongo_logs.R
 meta <- read_csv(file.path("data", "raw",
-                           "all-nes-lter-bongologs-20260526.csv"))%>%
+                           "all-nes-lter-bongologs-20260526.csv")) %>%
   filter(cruise %in% c("EN668", "EN706")) %>%
   mutate(cast_b = paste0("B", cast))  # 1 -> B1 to match CTD format
 
@@ -156,9 +167,9 @@ ctd_ids <- ctd_cnv_data %>%
   filter(!grepl("_B$|_C$", cast)) %>%
   distinct(cruise, station, cast)
 
-# what's in CTD but not in meta?
+# in CTD but not in meta
 anti_join(ctd_ids, meta, by = c("cruise", "station", "cast" = "cast_b"))
-# what's in meta but not in CTD?
+# in meta but not in CTD
 anti_join(meta, ctd_ids, by = c("cruise", "station", "cast_b" = "cast"))
 
 ctd_cnv_data <- ctd_cnv_data %>%
@@ -185,12 +196,15 @@ ctd_cnv_data %>%
   mutate(diff_min = as.numeric(difftime(file_start_time, datetime_UTC_start, units = "mins"))) %>%
   arrange(cruise, station) %>% print(n=40)
 
+rm(ctd_ids)
+
 ## ------------------------------------------ ##
 ##  Plot         ----
 ## ------------------------------------------ ##
 # --- raw CTD depth profile plots per cruise ----
-pdf(here("figures", "raw_ctd_profiles_check.pdf"),
+pdf(here("figures", "ctd_bongo_profiles_raw_check.pdf"),
     width = 14, height = 10)
+
 for (cr in sort(unique(ctd_cnv_data$cruise))) {
   p <- ctd_cnv_data %>%
     filter(cruise == cr) %>%
@@ -206,13 +220,14 @@ for (cr in sort(unique(ctd_cnv_data$cruise))) {
           strip.text   = element_text(size = 6))
   print(p)
 }
+
 dev.off()
+rm(p, cr)
 
 ## ------------------------------------------ ##
 ##  Label downcast / upcast        ----
 ## ------------------------------------------ ##
-source(here("R", "00_helpers.R"))
-
+# function in 00_helpers.R
 ctd_cnv_data <- ctd_cnv_data %>%
   group_by(cruise, station, cast) %>%
   do(label_down_up(.)) %>%
@@ -224,8 +239,10 @@ ctd_cnv_data %>%
 ## ------------------------------------------ ##
 ##  Post-label CTD profile plots      ----
 ## ------------------------------------------ ##
-pdf(here("figures", "labeled_ctd_profiles_check.pdf"),
+
+pdf(here("figures", "ctd_bongo_profiles_labeled.pdf"),
     width = 14, height = 10)
+
 for (cr in sort(unique(ctd_cnv_data$cruise))) {
   p <- ctd_cnv_data %>%
     filter(cruise == cr) %>%
@@ -249,7 +266,9 @@ for (cr in sort(unique(ctd_cnv_data$cruise))) {
     guides(color = guide_legend(override.aes = list(size = 4)))
   print(p)
 }
+
 dev.off()
+rm(p, cr)
 
 ## EN706 L1B1 = bad data = delete
 ## EN706 L11B9 = bad data = delete
@@ -341,8 +360,10 @@ ctd_cnv_data <- ctd_cnv_data %>%
 ## ------------------------------------------ ##
 ##  Plot final casts    ----
 ## ------------------------------------------ ##
-pdf(here("figures", "labeled_ctd_profiles_final.pdf"),
+
+pdf(here("figures", "ctd_bongo_profiles_final.pdf"),
     width = 14, height = 10)
+
 for (cr in sort(unique(ctd_cnv_data$cruise))) {
   p <- ctd_cnv_data %>%
     filter(cruise == cr) %>%
@@ -366,7 +387,9 @@ for (cr in sort(unique(ctd_cnv_data$cruise))) {
     guides(color = guide_legend(override.aes = list(size = 4)))
   print(p)
 }
+
 dev.off()
+rm(p, cr)
 
 ## ------------------------------------------ ##
 ##  Add notes column      ----
@@ -382,22 +405,22 @@ dev.off()
 ## EN668 L1B1 = started recording mid downcast (~8m)
 
 ctd_cast_notes <- tribble(
-  ~cruise,  ~station, ~cast,  ~note_code,             ~note_detail,
+  ~cruise,  ~station, ~cast,  ~note_code,       ~note_detail,
   # --- stitched cast ---
   ## EN706 L11B9 = patched L11 B9_B (downcast) and L11 B9_C (upcast)
   ##               max depth is not available for this cast due to ctd turning off
   ##               logsheet comments say ctd y tubing got disconned midcast
-  "EN706",  "L11",    "B9",   "patched_cast",         "Patched from B9_B downcast and B9_C upcast; CTD turned off mid-cast ~193 sec gap near max depth; no max depth available; logsheet notes Ytubing disconnected mid-cast",
+  "EN706",  "L11",    "B9",   "patched_cast",   "Patched from B9_B downcast and B9_C upcast; CTD turned off mid-cast ~193 sec gap near max depth; no max depth available; logsheet notes Ytubing disconnected mid-cast",
   
   # --- incomplete profiles: started mid-downcast ---
-  "EN706",  "L5",     "B6",   "ctd_late_start",       "CTD started recording mid-downcast ~40 m",
-  "EN706",  "L10",    "B10",  "ctd_late_start",       "CTD started recording mid-downcast ~40 m",
-  "EN706",  "L7",     "B14",  "ctd_late_start",       "CTD started recording mid-downcast ~25 m",
-  "EN706",  "L3",     "B20",  "ctd_late_start",       "CTD started recording mid-downcast ~12 m",
-  "EN668",  "L1",     "B1",   "ctd_late_start",       "CTD started recording mid-downcast ~8 m",
+  "EN706",  "L5",     "B6",   "ctd_late_start", "CTD started recording mid-downcast ~40 m",
+  "EN706",  "L10",    "B10",  "ctd_late_start", "CTD started recording mid-downcast ~40 m",
+  "EN706",  "L7",     "B14",  "ctd_late_start", "CTD started recording mid-downcast ~25 m",
+  "EN706",  "L3",     "B20",  "ctd_late_start", "CTD started recording mid-downcast ~12 m",
+  "EN668",  "L1",     "B1",   "ctd_late_start", "CTD started recording mid-downcast ~8 m",
   
   # --- incomplete profiles: stopped early ---
-  "EN706",  "L8",     "B15",  "ctd_early_end",        "CTD stopped recording on upcast immediately after max depth",
+  "EN706",  "L8",     "B15",  "ctd_early_end",  "CTD stopped recording on upcast immediately after max depth",
   
   # --- metadata fixes: original CNV header/filename errors ---
   "EN668",  "L4",     "B5",   "header_typo_corrected","CNV header had station L05; corrected to L4 based on filename and logsheet",
@@ -411,9 +434,8 @@ ctd_cnv_data <- ctd_cnv_data %>%
 ## ------------------------------------------ ##
 ##  QC / Validation checks           ----
 ## ------------------------------------------ ##
-
 ## ------------------------------------------ ##
-##  12a. Naming consistency checks   ----
+##  a. Naming consistency checks   ----
 ## ------------------------------------------ ##
 # all should return 0 rows
 
@@ -438,7 +460,7 @@ ctd_cnv_data %>%
   distinct(down_up)
 
 ## ------------------------------------------ ##
-##  12b. Physical range checks      ----
+##  b. Physical range checks      ----
 ## ------------------------------------------ ##
 ctd_cnv_data %>%
   summarise(
@@ -453,7 +475,7 @@ ctd_cnv_data %>%
   )
 
 ## ------------------------------------------ ##
-##  12c. Cast-level checks          ----
+##  c. Cast-level checks          ----
 ## ------------------------------------------ ##
 cast_qc <- ctd_cnv_data %>%
   group_by(cruise, station, cast) %>%
@@ -494,6 +516,52 @@ cast_qc %>%
          temp_range_C, n_time_reversal, n_obs, starts_with("flag_")) %>%
   arrange(cruise, station) %>%
   print(n = Inf, width = Inf)
+
+## ------------------------------------------ ##
+##  Plots       ----
+## ------------------------------------------ ##
+
+## near-surface temp by month
+ctd_cnv_data %>%
+  filter(down_up == "downcast", depth_m < 5) %>%
+  mutate(month = lubridate::month(date_time)) %>%
+  ggplot(aes(x = factor(month), y = temp_C, fill = factor(month))) +
+  geom_violin(alpha = 0.6, quantiles = c(0.25, 0.5, 0.75)) +
+  geom_jitter(width = 0.15, size = 0.5, alpha = 0.4, color = "grey30") +
+  scale_x_discrete(labels = month.abb) +
+  scale_fill_viridis_d(guide = "none") +
+  labs(title = "CTD near-surface temperature by month (depth < 5m, downcast)",
+       x = NULL, y = "Temp (°C)") +
+  theme_minimal()
+
+## near-bottom temp by month
+ctd_cnv_data %>%
+  filter(down_up == "downcast") %>%
+  group_by(cruise, station, cast) %>%
+  mutate(max_depth = max(depth_m, na.rm = TRUE)) %>%
+  filter(depth_m >= max_depth - 5) %>%
+  ungroup() %>%
+  mutate(month = lubridate::month(date_time, label = TRUE)) %>%
+  ggplot(aes(x = month, y = temp_C)) +
+  geom_boxplot(fill = "steelblue", alpha = 0.4, outlier.shape = NA) +
+  geom_jitter(aes(color = cruise), width = 0.2, size = 1.5, alpha = 0.8) +
+  facet_wrap(~station) +
+  labs(title = "CTD near-bottom temperature by month (within 5m of max depth, downcast)",
+       x = "Month", y = "Temp (°C)", color = "Cruise") +
+  theme_minimal()
+
+## large consecutive temp jumps
+temp_jumps_ctd <- ctd_cnv_data %>%
+  arrange(cruise, station, cast, date_time) %>%
+  group_by(cruise, station, cast) %>%
+  mutate(temp_diff = abs(temp_C - dplyr::lag(temp_C))) %>%
+  filter(!is.na(temp_diff), temp_diff > 5) %>%
+  select(cruise, station, cast, date_time, temp_C, temp_diff, depth_m) %>%
+  ungroup()
+
+message("Large consecutive temp jumps: ", nrow(temp_jumps_ctd))
+print(temp_jumps_ctd, n = 30)
+rm(temp_jumps_ctd)
 
 ## ------------------------------------------ ##
 ##  12d. Duplicate timestamp check   ----
@@ -552,10 +620,14 @@ ctd_cnv_data <- ctd_cnv_data %>%
 
 # T-S diagram colored by cruise
 ctd_cnv_data %>%
-  filter(down_up == "downcast", !is.na(salinity)) %>%
-  ggplot(aes(x = salinity, y = temp_C, color = cruise)) +
-  geom_point(size = 0.3, alpha = 0.4) +
-  labs(title = "T-S diagram (downcast only)",
+  filter(down_up == "downcast", !is.na(salinity),
+         salinity > 28) %>%   # removes clearly erroneous near-zero values
+  mutate(station = factor(station, levels = c(paste0("L", 1:11), "MVCO"))) %>%
+  ggplot(aes(x = salinity, y = temp_C, color = station)) +
+  geom_point(size = 0.8, alpha = 0.6) +
+  scale_color_viridis_d(name = "Station") +
+  facet_wrap(~cruise, scales = "free_y") +  # free y only, share x axis
+  labs(title = "T-S diagram by cruise and station (downcast only)",
        x = "Salinity (PSU)", y = "Temperature (°C)") +
   theme_minimal() +
   guides(color = guide_legend(override.aes = list(size = 3)))
@@ -581,6 +653,9 @@ ctd_cnv_data %>%
        x = "Conductivity (S/m)", y = "Depth (m)") +
   theme_minimal()
 
+ctd_cnv_data <- ctd_cnv_data %>%
+  select(-salinity)
+
 ## ------------------------------------------ ##
 ##  Save output              ----
 ## ------------------------------------------ ##
@@ -590,3 +665,12 @@ saveRDS(ctd_cnv_data,
 
 write_csv(ctd_cnv_data,
           here("data", "processed", "ctd_bongo_data.csv"))
+
+tibble(column = names(ctd_cnv_data)) %>%
+  write_csv(here("data", "processed", "ctd-column-headers.csv"))
+
+################################################################################
+# go to -----------> 03_tdr_offsets.R
+#           OR     > 02_px_sensor_tidy.R
+#           OR     > 02_ctd_bongo_tidy.R 
+################################################################################
