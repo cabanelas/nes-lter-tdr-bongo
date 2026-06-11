@@ -9,9 +9,12 @@
 ##           pull CTD max depth from NES-LTER API and compare to TDR max depth 
 ##
 ##  Input:  data/tdr_data_no_offset_DATE.RDS
-## data/processed/tdr_ctd_tests.csv (from 02_tdr_tidy.R)
+##          data/processed/tdr_ctd_tests.csv        (from 02_tdr_tidy.R)
 ##          data/raw/tdr_offsets.csv  
 ##          data/raw/all-nes-lter-bongologs-20260526.csv
+##               from nes-lter-tow-meta-v3.Rproj; 01_merge_bongo_logs.R
+##          data/processed/px_data_bongo_DATE.RDS   (from 02_px_sensor_tidy.R)
+##          data/processed/ctd_bongo_data_DATE.RDS  (from 02_ctd_bongo_tidy.R)
 ##  NES-LTER API 2
 ##    https://github.com/WHOIGit/nes-lter-api-2/wiki
 ##    https://nes-lter-api.whoi.edu/api/docs#/
@@ -429,10 +432,6 @@ tdr_surface %>%
   theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7))
 
 ## ------------------------------------------ ##
-##  HERE!!* 
-## ------------------------------------------ ##
-
-## ------------------------------------------ ##
 ##  Build final offsets df                 ----
 ## ------------------------------------------ ##
 ## bench test offsets for reference
@@ -446,6 +445,11 @@ print(bench_test_offsets)
 ## add min_depth to depth_comparison
 depth_comparison <- depth_comparison %>%
   left_join(tdr_surface, by = c("cruise", "station", "cast"))
+
+
+## ------------------------------------------ ##
+##  HERE!!* 
+## ------------------------------------------ ##
 
 ## Calculate TDR depth offset (calculated_offset_m) for each cast
 ##   1. PX sensor vs TDR      - per cast
@@ -465,6 +469,9 @@ depth_comparison <- depth_comparison %>%
 ##   - offset derived from surface min depth (less reliable)
 ##   - bench test value disagrees with calculated offset by >1m
 ##   - manual offset exists and differs from calculated
+suspicious_casts <- tdr_surface %>%
+  filter(min_depth_m > 2, cruise %in% suspicious_cruises) %>%
+  select(cruise, station, cast)
 
 offsets_draft <- depth_comparison %>%
   left_join(bench_test_offsets, by = "cruise") %>%
