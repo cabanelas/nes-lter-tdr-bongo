@@ -200,9 +200,7 @@ all_data <- all_data %>%
     cast = gsub("^B0*(\\d+.*)", "B\\1", cast),
     cast = ifelse(!grepl("^B", cast, ignore.case = TRUE),
                   paste0("B", cast), cast)
-  ) %>%
-  filter(!is.na(depth_m), depth_m >= 0, 
-         !is.na(date_time))
+  ) %>% filter(!is.na(depth_m), !is.na(date_time)) # depth_m >= 0,
 # checked warnings and not an issue
 
 # should be 0
@@ -402,8 +400,8 @@ tdr_test <- filter(all_data,
            TRUE ~ NA_character_          # EN712: Btest = no station
          ),
          cast = case_when(
-           station == "u9a"  ~ "B18",    # AR92: keep as-is
-           grepl("B\\d+test", cast) ~ str_extract(cast, "B\\d+(?=test)"),  # EN715, EN720
+           station == "u9a"  ~ "18",    # AR92: keep as-is
+           grepl("B\\d+test", cast) ~ str_extract(cast, "(?<=B)\\d+(?=test)"),  # EN715, EN720
            TRUE ~ NA_character_          # AT46 BL2test, EN712 Btest = no cast
          ))
 
@@ -595,7 +593,7 @@ all_data <- all_data %>%
 all_data %>%
   distinct(cruise, station, cast) %>%
   filter(grepl("_\\d+$", cast)) %>%
-  arrange(cruise, station, cast)
+  arrange(cruise, station, cast) # 14
 
 n_split <- all_data %>%
   distinct(cruise, station, cast) %>%
@@ -692,8 +690,6 @@ walk(plots, print)
 #        L2 B2_2  = 25 min, 38 m   -> tow 2               -> rename to B2
 #
 # AR99   = first cast bongo net; second cast is ring net only
-#        L6 B10_1                  -> bongo tow           -> rename to B10 
-#        L6 B10_2                  -> ring tow            -> rename to R10
 #        L9 B5_1                   -> bongo tow           -> rename to B5 
 #        L9 B5_2                   -> ring tow            -> rename to R5
 #
@@ -701,6 +697,10 @@ walk(plots, print)
 #        L6 B17_1 = 69 min, 95 m   -> UNCLEAR             -> DROP for now
 #        L6 B17_2 = 64 min, 74 m   -> real tow            -> rename to B17
 # the 74m matches written TDR depth on bongo logsheet
+#
+# EN712  = jus strange auto cut; not really 2 casts 
+#        L10 B7_1 = actual cast    -> tow                 -> rename to B7
+#        L10 B7_2 = surface read   -> tow                 -> DROP
 #
 # EN715  = re-deployed; delete first aborted cast
 #        L6 B13_1 = 15 min, 90 m   -> tow 1               -> DROP               
@@ -721,8 +721,10 @@ all_data <- all_data %>%
     cruise == "AR77"   & station == "L2" & cast == "B2_2"  ~ "B2",
     
     # AR99 L6: B10_1 bongo, B10_2 ring net
-    cruise == "AR99"   & station == "L6" & cast == "B10_1" ~ "B10",
-    cruise == "AR99"   & station == "L6" & cast == "B10_2" ~ "R10",
+    # after switching to keeping neg values this one isnt getting caught
+    # fixed manually below 
+    # cruise == "AR99"   & station == "L6" & cast == "B10_1" ~ "B10",
+    # cruise == "AR99"   & station == "L6" & cast == "B10_2" ~ "R10",
     
     # AR99 L9: B5_1 bongo, B5_2 ring net
     cruise == "AR99"   & station == "L9" & cast == "B5_1"  ~ "B5",
@@ -730,6 +732,9 @@ all_data <- all_data %>%
     
     # EN657 L6: B17_1 unclear/no elog; B17_2 real cast
     cruise == "EN657"  & station == "L6" & cast == "B17_2" ~ "B17",
+    
+    # EN712 L10: B7_1 bongo, B7_2 extra surface time 
+    cruise == "EN712"  & station == "L10"& cast == "B7_1"  ~ "B7",
     
     # EN715 L6: B13_1 aborted; B13_2 real cast
     cruise == "EN715"  & station == "L6" & cast == "B13_2" ~ "B13",
@@ -743,6 +748,7 @@ all_data <- all_data %>%
     !(cruise == "AE2426" & station == "L8" & cast == "B13_1"),  # aborted
     !(cruise == "AR77"   & station == "L2" & cast == "B2_1"),   # aborted re-deploy
     !(cruise == "EN657"  & station == "L6" & cast == "B17_1"),  # unclear,no elog 
+    !(cruise == "EN712"  & station == "L10"& cast == "B7_2"),
     # -- EN657 L6 B17 ---
     # B17_1 = 2020-10-17 00:21-00:38 not sure what this one is == cant find notes on logsheet == went down to 95
     # B17_2 = 2020-10-17 01:14-01:28 == L6B17 == went down to 72
@@ -780,6 +786,7 @@ rm(split_casts, split_groups, plots, remaining_splits)
 # EN715  = L5B6  = re-did deployment; so delete first aborted cast
 # AE2426 = L8B13 = funky stuff before start of actual cast
 # AR99   = L2B3  = the second cast is a ring net only at same L2R3
+# AR99   = L6B10 = the second cast is a ring net only at same L6R10
 
 ## --- Interactive plot to confirm time boundaries ---
 library(plotly)
@@ -791,8 +798,9 @@ missed_splits <- all_data %>%
     (cruise == "EN657" & station == "L3" & cast == "B2")  |
     (cruise == "EN706" & station == "L5" & cast == "B6")  |
     (cruise == "EN715" & station == "L5" & cast == "B6")  |
-    (cruise == "AE2426"& station == "L8" & cast == "B13")  |
-    (cruise == "AR99"  & station == "L2" & cast == "B3")
+    (cruise == "AE2426"& station == "L8" & cast == "B13") |
+    (cruise == "AR99"  & station == "L2" & cast == "B3")  |
+    (cruise == "AR99"  & station == "L6" & cast == "B10")
   ) %>%
   mutate(label = paste(cruise, station, cast))
 
@@ -833,6 +841,9 @@ rm(missed_splits, p)
 # this one may be tricky bc interval was not set to 1 sec (less points)
 # 1st tow = 2026-01-14 05:08-05:17 == L2B3
 # 2nd tow = 2026-01-14 05:43-05:54 == L2R3 (ring net done separate; update cast name)
+# -- AR99 = L6 B10 --- first cast bongo net; second cast is ring net only
+# 1st tow = 2026-01-15 21:51-22:20 == L6B10                      
+# 2nd tow = 2026-01-15 22:56-23:29 == L6R10 (ring net done separate; update cast name)
 
 ## ------------------------------------------ ##
 ## Time boundaries (confirmed from plots + logsheet/elog)
@@ -858,6 +869,9 @@ ae2426_L8_B13_split <- as.POSIXct("2024-11-09 19:10:00", tz = "UTC")
 
 # AR99 L2 B3: bongo + ring net in one file
 ar99_L2_B3_split    <- as.POSIXct("2026-01-14 05:30:00", tz = "UTC")
+
+# AR99 L6 B10: bongo + ring net in one file
+ar99_L6_B10_split   <- as.POSIXct("2026-01-15 22:40:00", tz = "UTC")
 
 ## ------------------------------------------ ##
 ## Apply corrections
@@ -886,6 +900,9 @@ all_data <- all_data %>%
       # AR99 L2B3: second half = ring net R3
       cruise == "AR99"  & station == "L2" & cast == "B3"  &
         date_time >  ar99_L2_B3_split    ~ "R3",
+      # AR99 L6B10: second half = ring net R10
+      cruise == "AR99"  & station == "L6" & cast == "B10"  &
+        date_time >  ar99_L6_B10_split    ~ "R10",
       TRUE ~ cast
     )
   ) %>%
@@ -910,7 +927,8 @@ all_data %>%
       (cruise == "EN706"  & station == "L5"  & cast == "B6")  |
       (cruise == "EN715"  & station == "L5"  & cast == "B6")  |
       (cruise == "AE2426" & station == "L8"  & cast == "B13") |
-      (cruise == "AR99"   & station == "L2"  & cast %in% c("B3","R3"))
+      (cruise == "AR99"   & station == "L2"  & cast %in% c("B3","R3")) |
+      (cruise == "AR99"   & station == "L6"  & cast %in% c("B10","R10"))
   ) %>%
   group_by(cruise, station, cast) %>%
   summarise(
@@ -1049,6 +1067,7 @@ meta_times %>%
 #         L8 B15   = end should be 01:00
 #         L10 B10  = start should be 00:45 (wrong on physical logsheet too)
 # EN657
+#         L1 B1    = start should be 18:29
 #         L1 B1    = end should be 18:34
 #         L7 B19   = end should be 06:34
 # EN644
@@ -1060,12 +1079,13 @@ meta_times %>%
 #         L3 B5    = start should be 07:34
 #         L6 B12   = start should be 02:50
 #         L9 B17   = start should be 19:03
+#         MVCO B15 = start should be 01:41 
 # AT46
 #         L6 B6    = start should be 13:49
 # AE2426
 #         L1 B1    = start should be 17:12
 #         L2 B4    = end should be 09:27
-#
+
 meta_times <- meta_times %>%
   mutate(
     meta_deploy = case_when(
@@ -1074,6 +1094,8 @@ meta_times <- meta_times %>%
       cruise == "EN617"  & station == "L3"  & cast == "5"  ~ ymd_hms("2018-07-21 07:34:00", tz = "UTC"),
       cruise == "EN617"  & station == "L6"  & cast == "12" ~ ymd_hms("2018-07-22 02:50:00", tz = "UTC"),
       cruise == "EN617"  & station == "L9"  & cast == "17" ~ ymd_hms("2018-07-22 19:03:00", tz = "UTC"),
+      cruise == "EN617"  & station == "MVCO"& cast == "15" ~ ymd_hms("2018-07-25 01:41:00", tz = "UTC"),
+      cruise == "EN657"  & station == "L1"  & cast == "1" ~ ymd_hms("2020-10-13 18:29:00", tz = "UTC"),
       cruise == "AT46"   & station == "L6"  & cast == "6"  ~ ymd_hms("2022-02-17 13:49:00", tz = "UTC"),
       cruise == "AE2426" & station == "L1"  & cast == "1"  ~ ymd_hms("2024-11-06 17:12:00", tz = "UTC"),
       TRUE ~ meta_deploy
@@ -1119,6 +1141,7 @@ tdr_trim <- all_data %>%
   mutate(cast_join = str_remove(cast, "^[BR]")) %>%   # B1 -> 1, R19 -> 19
   left_join(meta_times, by = c("cruise", "station", "cast_join" = "cast")) %>%
   filter(
+    grepl("^R", cast) |          # ring nets: skip trim, no logsheet times
     is.na(meta_deploy) |
       (is.na(meta_recover) &
          date_time >= meta_deploy - BUFFER_SECS) |
@@ -1185,14 +1208,24 @@ rm(df, p, cr)
 ##  9b. Post-trim manual fixes  ----
 ## ------------------------------------------ ##
 # not really a big time discrepancy or anything; just cutting off long tails 
+# AR99 ring cast times missing
+#         L2 R3    = 2026-01-14 05:43:35-05:53:29
+#         L9 R5    = 2026-01-14 23:23:00-00:03:00
+#         L6 R10   = 2026-01-15 22:57:00-23:23:00
 manual_fixes <- tribble(
   ~cruise,  ~station, ~cast, ~fix_type, ~fix_time,
   "EN720",  "L4",     "B6",  "start",   "2024-09-07 09:53:17",
   "EN720",  "L9",     "B19", "start",   "2024-09-10 07:14:42",
   "EN715",  "L2",     "B2",  "start",   "2024-05-04 04:30:35",
   "EN712",  "L5",     "B2",  "start",   "2024-02-10 04:47:42",
-  "AE2426", "L1",     "B1",  "start",   "2024-11-06 17:11:59",
+  "AE2426", "L1",     "B1",  "start",   "2024-11-06 17:09:00",
   "EN687",  "L1",     "B1",  "start",   "2022-07-29 19:50:00",
+  "AR99",   "L2",     "R3",  "start",   "2026-01-14 05:43:35",
+  "AR99",   "L9",     "R5",  "start",   "2026-01-14 23:23:00",
+  "AR99",   "L6",     "R10", "start",   "2026-01-15 22:57:00",
+  "AR99",   "L2",     "R3",  "end",     "2026-01-14 05:53:29",
+  "AR99",   "L9",     "R5",  "end",     "2026-01-14 00:03:00",
+  "AR99",   "L6",     "R10", "end",     "2026-01-15 23:23:00",
   "EN687",  "L1",     "B1",  "end",     "2022-07-29 19:55:00",
   "EN687",  "L2",     "B2",  "end",     "2022-07-30 04:01:11",
   "AE2426", "L2",     "B4",  "end",     "2024-11-07 09:27:06",
@@ -1200,7 +1233,8 @@ manual_fixes <- tribble(
   "HRS2303","L4",     "B10", "end",     "2023-05-04 19:22:12",
   "EN706",  "L1",     "B1",  "end",     "2023-08-07 18:13:00",
   "EN617",  "MVCO",   "B35", "end",     "2018-07-25 01:46:18",
-  "EN657",  "MVCO",   "B20", "end",     "2020-10-18 02:11:36"
+  "EN657",  "MVCO",   "B20", "end",     "2020-10-18 02:11:36",
+  "AE2426", "L1",     "B1",  "end",     "2024-11-06 17:17:06"
 ) %>%
   mutate(fix_time = as.POSIXct(fix_time, tz = "UTC"))
 

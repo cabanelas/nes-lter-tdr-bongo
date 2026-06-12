@@ -5,8 +5,8 @@
 ##  Author:  Alexandra Cabanelas
 ##
 ##  Purpose: cross-ref with Pxsensor + CTD to get TDR depth offsets as needed
-## For casts where TDR was attached to CTD (bench tests),
-##           pull CTD max depth from NES-LTER API and compare to TDR max depth 
+##           For casts where TDR was attached to CTD (bench tests),
+##           get CTD max depth from NES-LTER API and compare to TDR max depth 
 ##
 ##  Input:  data/tdr_data_no_offset_DATE.RDS
 ##          data/processed/tdr_ctd_tests.csv        (from 02_tdr_tidy.R)
@@ -19,7 +19,7 @@
 ##    https://github.com/WHOIGit/nes-lter-api-2/wiki
 ##    https://nes-lter-api.whoi.edu/api/docs#/
 ##
-##  Output: data/processed/tdr_ctd_offset.csv
+##  Output: data/processed/bench_test_offsets.csv
 ###############################################################
 
 ## cruises with CTD-TDR tests: 
@@ -58,7 +58,7 @@ meta <- read_csv(file.path("data", "raw",
                            "all-nes-lter-bongologs-20260526.csv"))
 
 ## ------------------------------------------ ##
-##  1. Compare with CTD-TDR tests 
+##  1. CTD-TDR bench tests 
 ## ------------------------------------------ ##
 # on a couple of cruises tdr attached to shipboard CTD
 
@@ -67,7 +67,7 @@ meta <- read_csv(file.path("data", "raw",
 ## ------------------------------------------ ##
 # similar to what was done in 02_tdr_tidy.R line ~507
 # tdr_ctd_tests.csv was written BEFORE clock corrections in 02_tdr_tidy.R
-# must re-apply the same offsets here
+# re-apply the same offsets here
 
 clock_offsets <- tribble(
   ~cruise,   ~offset_hrs,
@@ -89,7 +89,7 @@ tdr_ctd_test <- tdr_ctd_test %>%
 rm(clock_offsets)
 
 ## ------------------------------------------ ##
-##  NES-LTER API2: Lookup missing metadata
+##  NES-LTER API2: fill in missing metadata
 ## ------------------------------------------ ##
 # 2 casts in the tdr ctd test df are missing meta
 ## manually identify missing station/cast for incomplete rows
@@ -106,35 +106,32 @@ lookup_ctd_metadata <- function(cruise) {
   read_csv(url, show_col_types = FALSE)
 }
 
-## AT46 - find which casts are at L2
+## AT46 - find cast at L2
 lookup_ctd_metadata("AT46") %>% 
   filter(nearest_station == "L2")
 
 tdr_ctd_test %>%
   filter(cruise == "AT46", station == "L2") %>%
-  summarise(start = min(date_time), end = max(date_time))
+  summarize(start = min(date_time), end = max(date_time))
 # cast 17 
 
-## EN712 
+## EN712 - find station and cast
 lookup_ctd_metadata("EN712") %>% print(n=25)
 
 tdr_ctd_test %>% 
   filter(cruise == "EN712") %>% 
-  summarise(start = min(date_time), end = max(date_time))
+  summarize(start = min(date_time), end = max(date_time))
 # d1a cast 21
 
 rm(lookup_ctd_metadata)
 
-## ------------------------------------------ ##
-##  Manual metadata fixes                  ----
-## ------------------------------------------ ##
-
+## fill metadata 
 tdr_ctd_test <- tdr_ctd_test %>%
   mutate(
     # fill cast 
     cast = case_when(
-      cruise == "AT46" & station == "L2" & is.na(cast) ~ "17",  
-      cruise == "EN712" & is.na(cast)                  ~ "21",    
+      cruise == "AT46" & station == "L2" & is.na(cast) ~ 17,  
+      cruise == "EN712" & is.na(cast)                  ~ 21,    
       TRUE ~ cast
     ),
     # fill station
@@ -157,6 +154,10 @@ ggplot(tdr_ctd_test, aes(x = date_time, y = depth_m)) +
   theme_minimal() +
   theme(axis.text.x = element_blank())
 
+## ------------------------------------------ ##
+##  NES-LTER API2: fetch ship CTD max depth ----
+## ------------------------------------------ ##
+
 ## --- get tdr max depth --- 
 tdr_ctd_test_maxdepth <- tdr_ctd_test %>%
   group_by(cruise, station, cast) %>%
@@ -166,10 +167,6 @@ tdr_ctd_test_maxdepth <- tdr_ctd_test %>%
     tdr_end         = max(date_time, na.rm = TRUE),
     .groups = "drop"
   )
-
-## ------------------------------------------ ##
-##  NES-LTER API2: CTD data                ----
-## ------------------------------------------ ##
 
 BASE_URL <- "https://nes-lter-api.whoi.edu/api"
 
@@ -187,11 +184,11 @@ ctd_maxdepth <- tdr_ctd_test_maxdepth %>%
       mutate(cruise = toupper(cruise), cast = cast)  # keep original cast (with B) for joining back
   })
 
-tdr_ctd_offset <- tdr_ctd_test_maxdepth %>%
+bench_test_offsets <- tdr_ctd_test_maxdepth %>%
   left_join(ctd_maxdepth, by = c("cruise", "cast")) %>%
   mutate(depth_offset_m = ctd_max_depth_m - tdr_max_depth_m)
 
-tdr_ctd_offset %>%
+bench_test_offsets %>%
   ggplot(aes(x = ctd_max_depth_m, y = tdr_max_depth_m, label = paste(cruise, station, cast, sep = "/"))) +
   geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray50") +
   geom_point(aes(color = cruise), size = 3) +
@@ -203,163 +200,143 @@ tdr_ctd_offset %>%
   ) +
   theme_minimal()
 
-## ------------------------------------------ ##
-##  Add meta context to offset check        ----
-## ------------------------------------------ ##
-# adding depth_bottom and depth_target from bongo logsheets
-meta_context <- meta %>%
-  mutate(across(c(cruise, station, cast), as.character)) %>%
-  filter(cruise %in% tdr_ctd_offset$cruise) %>%
-  distinct(cruise, station, cast, depth_bottom, depth_target)
-
-tdr_ctd_offset <- tdr_ctd_offset %>%
-  mutate(cast_stripped = str_remove(cast, "^B")) %>%
-  left_join(meta_context, by = c("cruise", "station", "cast_stripped" = "cast")) %>%
-  select(-cast_stripped)
-
-rm(meta_context)
-
-## ------------------------------------------ ##
-##  AT46 cross-reference with manual offsets ----
-## ------------------------------------------ ##
+## AT46 cross-check: compare bench test vs existing manual offset
 # has manual (via logsheet notes) and TDR test offset
-offsets %>%
-  filter(cruise == "AT46") %>%
-  arrange(offset_m, station) 
-## compare to what CTD bench test gives us
-tdr_ctd_offset %>%
-  filter(cruise == "AT46") %>%
-  select(cruise, station, cast, tdr_max_depth_m, ctd_max_depth_m, 
-         depth_offset_m) 
+offsets %>% filter(cruise == "AT46") %>% arrange(station)
+bench_test_offsets %>% filter(cruise == "AT46") %>% select(-c(tdr_start, tdr_end))
 
 ## ------------------------------------------ ##
 ##  Expand cruise-wide offsets to all casts ----
 ## ------------------------------------------ ##
+#### MAYBE INSTEAD OF THIS I SHOULD JUST COMPARE THE OFFSET TO MIN DEPTHS
 ## for cruises NOT in manual offsets: AR92, EN712, EN715, EN720
 ## use the bench test depth_offset_m for all casts on that cruise
-new_offsets <- tdr_ctd_offset %>%
-  filter(!cruise %in% offsets$cruise) %>%  # exclude AT46 - already in offsets
-  select(cruise, depth_offset_m) %>%
-  mutate(depth_offset_m = round(depth_offset_m)) %>%
-  left_join(
-    tdr_data %>% distinct(cruise, station, cast),
-    by = "cruise"
-  ) %>%
-  rename(offset_m = depth_offset_m)
-
-## combine with existing manual offsets
-offsets_combined <- bind_rows(offsets, new_offsets) %>%
-  arrange(cruise, station, cast)
-
-rm(new_offsets)
+# new_offsets <- bench_test_offsets %>%
+#   filter(!cruise %in% offsets$cruise) %>%  # exclude AT46 - already in offsets
+#   select(cruise, depth_offset_m) %>%
+#   mutate(depth_offset_m = round(depth_offset_m)) %>%
+#   left_join(
+#     tdr_data %>% distinct(cruise, station, cast),
+#     by = "cruise"
+#   ) %>%
+#   rename(offset_m = depth_offset_m)
+# 
+# ## combine with existing manual offsets
+# offsets_combined <- bind_rows(offsets, new_offsets) %>%
+#   arrange(cruise, station, cast)
+# 
+# rm(new_offsets)
 
 ## ------------------------------------------ ##
-##  2. PXsensor offsets
+##  2. PX sensor data
 ## ------------------------------------------ ##
 
-## load most recent px_data_bongo RDS (from 02_px_sensor_tidy.R)
+## --- load most recent px_data_bongo RDS (from 02_px_sensor_tidy.R)
 px_file <- sort(list.files(here("data", "processed"),
                            pattern = "^px_data_bongo_\\d{4}-\\d{2}-\\d{2}\\.rds$",
                            full.names = TRUE)) %>% tail(1)
 px_data_bongo <- readRDS(px_file)
-
 unique(px_data_bongo$cruise) # 6 cruises
 
 ## px max depth per cast 
 px_maxdepth <- px_data_bongo %>%
-  #filter(down_up == "downcast") %>%
   group_by(cruise, station, cast) %>%
   summarise(px_max_depth_m = max(depth_m, na.rm = TRUE), .groups = "drop")
 
-## add cruises without existing offsets, but with PX sensor data
-## cruises in px data but not yet in offsets_combined
-px_only_cruises <- px_maxdepth %>%
-  filter(!cruise %in% offsets_combined$cruise) %>%
-  select(cruise, station, cast) %>%
-  mutate(offset_m = NA_real_)
-
-# offsets combined has manual offsets file + ones with ctd-tdr tests
-## add px max depth data to offsets_combined to compare
-offsets_combined <- bind_rows(offsets_combined, px_only_cruises) %>%
-  arrange(cruise, station, cast)
-
-## add px_max_depth_m for everyone
-offsets_combined <- offsets_combined %>%
-  left_join(px_maxdepth, by = c("cruise", "station", "cast"))
+# ## add cruises without existing offsets, but with PX sensor data
+# ## cruises in px data but not yet in offsets_combined
+# px_only_cruises <- px_maxdepth %>%
+#   filter(!cruise %in% offsets_combined$cruise) %>%
+#   select(cruise, station, cast) %>%
+#   mutate(offset_m = NA_real_)
+# 
+# # offsets combined has manual offsets file + ones with ctd-tdr tests
+# ## add px max depth data to offsets_combined to compare
+# offsets_combined <- bind_rows(offsets_combined, px_only_cruises) %>%
+#   arrange(cruise, station, cast)
+# 
+# ## add px_max_depth_m for everyone
+# offsets_combined <- offsets_combined %>%
+#   left_join(px_maxdepth, by = c("cruise", "station", "cast"))
 
 ## ------------------------------------------ ##
-##  CTD on bongo                           ----
+##  3. CTD on bongo data               ----
 ## ------------------------------------------ ##
 
 ## load most recent ctd_bongo RDS (from 02_ctd_bongo_tidy.R)
 ctd_file <- sort(list.files(here("data", "processed"),
                             pattern = "^ctd_bongo_data_\\d{4}-\\d{2}-\\d{2}\\.rds$",
                             full.names = TRUE)) %>% tail(1)
-message("Reading: ", basename(ctd_file))
 ctd_bongo_data <- readRDS(ctd_file)
-
-unique(ctd_bongo_data$cruise) # EN668, EN706
+unique(ctd_bongo_data$cruise) # 2 cruises only: EN668, EN706
 
 ## ctd bongo max depth per cast
 ctd_bongo_maxdepth <- ctd_bongo_data %>%
-  filter(down_up == "downcast") %>%
   group_by(cruise, station, cast) %>%
   summarise(ctd_bongo_max_depth_m = max(depth_m, na.rm = TRUE), .groups = "drop") %>%
-  mutate(cast = str_remove(cast, "^B"))  # strip B to match other cast formats if needed
+  mutate(cast = str_remove(cast, "^B")) 
 
 ## ------------------------------------------ ##
-##  Build master depth comparison df        ----
+##  TDR max depth and surface min depth     ----
 ## ------------------------------------------ ##
 
 ## tdr max depth; all bongo casts
-tdr_maxdepth_all <- tdr_data %>%
+# tdr_maxdepth_all <- tdr_data %>%
+#   group_by(cruise, station, cast) %>%
+#   summarise(tdr_max_depth_m = max(depth_m, na.rm = TRUE), .groups = "drop")
+
+tdr_depth_summary <- tdr_data %>%
   group_by(cruise, station, cast) %>%
-  summarise(tdr_max_depth_m = max(depth_m, na.rm = TRUE), .groups = "drop")
+  summarize(
+    tdr_max_depth_m = max(depth_m, na.rm = TRUE),
+    tdr_min_depth_m = min(depth_m, na.rm = TRUE),
+    .groups = "drop"
+  )
 
 ## ctd bench test max depths (tdr attached to ship CTD rosette)
 # comparing the CTD depth to the TDR depth
-ctd_test_maxdepth <- tdr_ctd_offset %>%
-  select(cruise, station, cast,
-         tdr_benchtest_max_depth_m = tdr_max_depth_m,
-         shipctd_benchtest_max_depth_m = ctd_max_depth_m)
-
-## manual offsets from file
-manual_offsets <- offsets %>%
-  mutate(across(c(cruise, station, cast), as.character)) %>%
-  select(cruise, station, cast, manual_offset_m = offset_m)
-
-## all unique keys across instruments
-all_keys <- bind_rows(
-  tdr_maxdepth_all    %>% select(cruise, station, cast),
-  px_maxdepth         %>% select(cruise, station, cast),
-  ctd_bongo_maxdepth  %>% select(cruise, station, cast),
-  manual_offsets      %>% select(cruise, station, cast)
-) %>%
-  distinct() %>%
-  arrange(cruise, station, cast)
-
-depth_comparison <- all_keys %>%
-  left_join(tdr_maxdepth_all,    by = c("cruise", "station", "cast")) %>%
-  left_join(px_maxdepth,         by = c("cruise", "station", "cast")) %>%
-  left_join(ctd_bongo_maxdepth,  by = c("cruise", "station", "cast")) %>%
-  left_join(ctd_test_maxdepth,   by = c("cruise", "station", "cast")) %>%
-  left_join(manual_offsets,      by = c("cruise", "station", "cast"))
-
-glimpse(depth_comparison)
-
-## which instruments have data per cruise
-depth_comparison %>%
-  group_by(cruise) %>%
-  summarise(
-    n_casts              = n(),
-    has_tdr              = any(!is.na(tdr_max_depth_m)),
-    has_px               = any(!is.na(px_max_depth_m)),
-    has_ctd_bongo        = any(!is.na(ctd_bongo_max_depth_m)),
-    has_ctd_benchtest    = any(!is.na(shipctd_benchtest_max_depth_m)),
-    has_manual_offset    = any(!is.na(manual_offset_m)),
-    .groups = "drop"
-  ) %>%
-  print(n = Inf)
+# ctd_test_maxdepth <- bench_test_offsets %>%
+#   select(cruise, station, cast,
+#          tdr_benchtest_max_depth_m = tdr_max_depth_m,
+#          shipctd_benchtest_max_depth_m = ctd_max_depth_m)
+# 
+# ## manual offsets from file
+# manual_offsets <- offsets %>%
+#   mutate(across(c(cruise, station, cast), as.character)) %>%
+#   select(cruise, station, cast, manual_offset_m = offset_m)
+# 
+# ## all unique keys across instruments
+# all_keys <- bind_rows(
+#   tdr_maxdepth_all    %>% select(cruise, station, cast),
+#   px_maxdepth         %>% select(cruise, station, cast),
+#   ctd_bongo_maxdepth  %>% select(cruise, station, cast),
+#   manual_offsets      %>% select(cruise, station, cast)
+# ) %>%
+#   distinct() %>%
+#   arrange(cruise, station, cast)
+# 
+# depth_comparison <- all_keys %>%
+#   left_join(tdr_maxdepth_all,    by = c("cruise", "station", "cast")) %>%
+#   left_join(px_maxdepth,         by = c("cruise", "station", "cast")) %>%
+#   left_join(ctd_bongo_maxdepth,  by = c("cruise", "station", "cast")) %>%
+#   left_join(ctd_test_maxdepth,   by = c("cruise", "station", "cast")) %>%
+#   left_join(manual_offsets,      by = c("cruise", "station", "cast"))
+# 
+# glimpse(depth_comparison)
+# 
+# ## which instruments have data per cruise
+# depth_comparison %>%
+#   group_by(cruise) %>%
+#   summarise(
+#     n_casts              = n(),
+#     has_tdr              = any(!is.na(tdr_max_depth_m)),
+#     has_px               = any(!is.na(px_max_depth_m)),
+#     has_ctd_bongo        = any(!is.na(ctd_bongo_max_depth_m)),
+#     has_ctd_benchtest    = any(!is.na(shipctd_benchtest_max_depth_m)),
+#     has_manual_offset    = any(!is.na(manual_offset_m)),
+#     .groups = "drop"
+#   ) %>%
+#   print(n = Inf)
 
 # which have 2 depths; any with 3 or more???? 
 # check against logsheets? 
@@ -368,188 +345,403 @@ depth_comparison %>%
 ##  Surface min depth check (all cruises)  ----
 ## ------------------------------------------ ##
 
-tdr_surface <- tdr_data %>%
-  group_by(cruise, station, cast) %>%
-  summarise(min_depth_m = min(depth_m, na.rm = TRUE), .groups = "drop")
+# tdr_surface <- tdr_data %>%
+#   group_by(cruise, station, cast) %>%
+#   summarise(min_depth_m = min(depth_m, na.rm = TRUE), .groups = "drop")
 
 ## per cruise surface summary
-tdr_surface %>%
+tdr_depth_summary %>%
   group_by(cruise) %>%
   summarise(
-    min    = min(min_depth_m),
-    median = median(min_depth_m),
-    max    = max(min_depth_m),
-    n_above_2m = sum(min_depth_m > 2),
+    min    = min(tdr_min_depth_m),
+    median = median(tdr_min_depth_m),
+    max    = max(tdr_min_depth_m),
+    n_suspicious = sum(tdr_min_depth_m > 2 | tdr_min_depth_m < -2),
     .groups = "drop"
   ) %>%
   arrange(desc(median))
 
-tdr_surface %>%
+tdr_depth_summary %>%
   group_by(cruise, cast) %>%
   summarise(
-    min    = min(min_depth_m),
-    n_above_2m = sum(min_depth_m > 2),
+    min    = min(tdr_min_depth_m),
     .groups = "drop"
   ) %>%
-  filter(min > 2) %>%
-  arrange(desc(min)) %>% print(n=100)
+  filter(min > 2 | min < -2) %>%
+  arrange(desc(min)) %>% print(n=180)
 
 ## plot suspicious cruises
-suspicious_cruises <- tdr_surface %>%
+suspicious_cruises <- tdr_depth_summary %>%
   group_by(cruise) %>%
   summarise(
-    median_min = median(min_depth_m),
-    n_above_2m = sum(min_depth_m > 2),
+    median_min = median(tdr_min_depth_m),
+    n_suspicious = sum(tdr_min_depth_m > 2 | tdr_min_depth_m < -2),
     .groups = "drop"
   ) %>%
-  filter(median_min > 2 | n_above_2m >= 3) %>% 
+  filter(median_min > 2 | median_min < -2 | n_suspicious >= 3) %>% 
   pull(cruise)
 
-tdr_data %>%
-  filter(cruise %in% suspicious_cruises) %>%
-  ggplot(aes(x = date_time, y = depth_m)) +
-  geom_line(linewidth = 0.3) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
-  scale_y_reverse(limits = c(25, 0)) +
-  facet_wrap(~ paste(cruise, station, cast), scales = "free_x") +
-  labs(x = NULL, y = "depth (m)",
-       title = "TDR depth profiles — suspicious surface values (0–25m)") +
-  theme_minimal() +
-  theme(axis.text.x = element_blank(), strip.text = element_text(size = 7))
+suspicious_casts <- tdr_depth_summary %>%
+  filter(tdr_min_depth_m > 2 | tdr_min_depth_m < -2, 
+         cruise %in% suspicious_cruises) %>%
+  select(cruise, station, cast)
 
-tdr_surface %>%
-  filter(cruise %in% suspicious_cruises) %>%
-  ggplot(aes(x = reorder(cast, min_depth_m), y = min_depth_m, color = min_depth_m > 2)) +
+walk(suspicious_cruises, function(cr) {
+  p <- tdr_data %>%
+    filter(cruise == cr) %>%
+    ggplot(aes(x = date_time, y = depth_m)) +
+    geom_line(linewidth = 2) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+    scale_y_reverse(limits = c(25, -5)) +
+    facet_wrap(~ paste(station, cast), scales = "free_x") +
+    labs(x = NULL, y = "depth (m)",
+         title = paste("TDR depth profiles —", cr)) +
+    theme_minimal() +
+    theme(axis.text.x = element_blank(), strip.text = element_text(size = 7))
+  print(p)
+})
+
+tdr_depth_summary %>%
+  filter(cruise %in% suspicious_cruises) %>%        # already all casts per cruise
+  ggplot(aes(x = reorder(cast, tdr_min_depth_m), y = tdr_min_depth_m, 
+             color = case_when(
+               tdr_min_depth_m > 2  ~ "too deep",
+               tdr_min_depth_m < -2 ~ "too negative",
+               TRUE                 ~ "ok"
+             ))) +
   geom_point(size = 3) +
-  geom_hline(yintercept = 2, linetype = "dashed", color = "gray50") +
-  scale_color_manual(values = c("TRUE" = "tomato", "FALSE" = "steelblue"),
-                     labels = c("TRUE" = ">2m", "FALSE" = "≤2m"),
-                     name = "surface depth") +
+  geom_hline(yintercept =  2, linetype = "dashed", color = "gray50") +
+  geom_hline(yintercept = -2, linetype = "dashed", color = "gray50") +
+  scale_color_manual(
+    values = c("too deep"     = "tomato",
+               "too negative" = "orange",
+               "ok"           = "steelblue"),
+    name = "surface depth"
+  ) +
   facet_wrap(~ cruise, scales = "free_x") +
-  labs(x = "cast", y = "min depth (m)",
-       title = "Surface entry depth by cast — suspicious cruises") +
+  labs(x = "cast", y = "min depth (m)") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7))
 
 ## ------------------------------------------ ##
-##  Build final offsets df                 ----
-## ------------------------------------------ ##
-## bench test offsets for reference
-# compared against calculated_offset_m downstream
-bench_test_offsets <- tdr_ctd_offset %>%
-  select(cruise, bench_offset_m = depth_offset_m) %>%
-  mutate(bench_offset_m = round(bench_offset_m))
-
-print(bench_test_offsets)
-
-## add min_depth to depth_comparison
-depth_comparison <- depth_comparison %>%
-  left_join(tdr_surface, by = c("cruise", "station", "cast"))
-
-
-## ------------------------------------------ ##
-##  HERE!!* 
+##  Offsets1: TDR compared to PX
 ## ------------------------------------------ ##
 
-## Calculate TDR depth offset (calculated_offset_m) for each cast
-##   1. PX sensor vs TDR      - per cast
-##   2. CTD on bongo vs TDR   - per cast
-##   3. Surface min depth     - for casts flagged as suspicious (min_depth > 2m)
-##                               and no instrument reference available
-##   4. 0                     - no reference, surface looks clean
-##
-## bench_offset_m (from CTD-TDR bench tests) is retained as a reference
-## column only — not applied directly, but used to flag disagreements
-## (|bench - calculated| > 1m → needs_review = TRUE)
-##
-## manual_offset_m (from tdr_offsets.csv) is also retained for comparison;
-## disagreements flagged in notes for manual review
-##
-## needs_review = TRUE when:
-##   - offset derived from surface min depth (less reliable)
-##   - bench test value disagrees with calculated offset by >1m
-##   - manual offset exists and differs from calculated
-suspicious_casts <- tdr_surface %>%
-  filter(min_depth_m > 2, cruise %in% suspicious_cruises) %>%
-  select(cruise, station, cast)
+## all unique cast keys across instruments + manual offsets
+all_keys <- bind_rows(
+  tdr_depth_summary %>% select(cruise, station, cast),
+  px_maxdepth      %>% select(cruise, station, cast),
+  ctd_bongo_maxdepth %>% select(cruise, station, cast),
+  offsets %>% mutate(across(c(cruise, station, cast), as.character)) %>%
+    select(cruise, station, cast)
+) %>%
+  distinct() %>%
+  arrange(cruise, station, cast)
 
-offsets_draft <- depth_comparison %>%
-  left_join(bench_test_offsets, by = "cruise") %>%
+offsets1 <- all_keys %>%
+  left_join(tdr_depth_summary,   by = c("cruise", "station", "cast")) %>%
+  left_join(px_maxdepth,         by = c("cruise", "station", "cast")) %>%
+  left_join(ctd_bongo_maxdepth,  by = c("cruise", "station", "cast")) %>%
+  left_join(offsets %>%
+      mutate(across(c(cruise, station, cast), as.character)) %>%
+      select(cruise, station, cast, manual_offset_m = offset_m),
+      by = c("cruise", "station", "cast")
+  ) %>%
   mutate(
-    is_suspicious = paste(cruise, station, cast) %in%
-      paste(suspicious_casts$cruise, suspicious_casts$station, suspicious_casts$cast),
     calculated_offset_m = case_when(
-      # 1. PX vs TDR per cast
       !is.na(px_max_depth_m)        ~ px_max_depth_m - tdr_max_depth_m,
-      # 2. CTD bongo vs TDR per cast
       !is.na(ctd_bongo_max_depth_m) ~ ctd_bongo_max_depth_m - tdr_max_depth_m,
-      # 3. surface min depth for suspicious casts
-      is_suspicious                 ~ min_depth_m,
-      # 4. clean surface, no reference needed
-      TRUE                          ~ 0
+      TRUE                          ~ NA_real_   # handled later
     ),
     offset_source = case_when(
       !is.na(px_max_depth_m)        ~ "px_tdr",
       !is.na(ctd_bongo_max_depth_m) ~ "ctd_bongo_tdr",
-      is_suspicious                 ~ "surface_min",
-      TRUE                          ~ "no_ref_clean_surface"
-    ),
+      TRUE                          ~ NA_character_
+    )
+  )
+
+offsets1 %>% count(offset_source)
+
+## ------------------------------------------ ##
+##  Offsets2: Bench tests check
+## ------------------------------------------ ##
+
+bench_cruises <- bench_test_offsets %>%
+  filter(!cruise %in% offsets$cruise) %>% # AT46 already has offsets
+  pull(cruise) %>%
+  unique()
+
+bench_test_offsets %>% filter(cruise %in% bench_cruises) %>% print(width = Inf)
+
+## --- Plot all casts for bench test cruises ---
+tdr_data %>%
+  filter(cruise %in% bench_cruises) %>%
+  left_join(tdr_depth_summary, by = c("cruise", "station", "cast")) %>%
+  filter(down_up == "downcast") %>%
+  ggplot(aes(x = date_time, y = depth_m)) +
+  geom_line(linewidth = 0.3) +
+  geom_text(
+    data = tdr_depth_summary %>%
+      filter(cruise %in% bench_cruises) %>%
+      left_join(tdr_data %>% filter(down_up == "downcast") %>%
+                  group_by(cruise, station, cast) %>%
+                  summarise(label_time = min(date_time), .groups = "drop"),
+                by = c("cruise", "station", "cast")),
+    aes(x = label_time, y = tdr_min_depth_m,
+        label = round(tdr_min_depth_m, 1)),
+    vjust = -0.5, size = 2.5, color = "tomato"
+  ) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray60") +
+  scale_y_reverse() +
+  facet_wrap(~ paste(cruise, station, cast), scales = "free") +
+  labs(
+    title = "Bench test cruises — downcast depth profiles (min depth labeled)",
+    x = NULL, y = "depth (m)"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(), strip.text = element_text(size = 7))
+
+walk(bench_cruises, function(cr) {
+  label_df <- tdr_depth_summary %>%
+    filter(cruise == cr) %>%
+    left_join(
+      tdr_data %>%
+        filter(cruise == cr, down_up == "downcast") %>%
+        group_by(cruise, station, cast) %>%
+        summarise(label_time = min(date_time), .groups = "drop"),
+      by = c("cruise", "station", "cast")
+    )
+  
+  p <- tdr_data %>%
+    filter(cruise == cr) %>%
+    left_join(tdr_depth_summary, by = c("cruise", "station", "cast")) %>%
+    filter(down_up == "downcast") %>%
+    ggplot(aes(x = date_time, y = depth_m)) +
+    geom_line(linewidth = 0.3) +
+    geom_text(
+      data = label_df,
+      aes(x = label_time, y = tdr_min_depth_m,
+          label = round(tdr_min_depth_m, 1)),
+      vjust = 0.5, hjust = -1, size = 4.5, color = "tomato"
+    ) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "gray60") +
+    scale_y_reverse() +
+    facet_wrap(~ paste(station, cast), scales = "free") +
+    labs(
+      title = paste("Bench test cruises — downcast depth profiles —", cr),
+      x = NULL, y = "depth (m)"
+    ) +
+    theme_minimal() +
+    theme(axis.text.x = element_blank(), strip.text = element_text(size = 7))
+  
+  print(p)
+})
+
+for (cr in bench_cruises) {
+  p <- tdr_data %>%
+    filter(cruise == cr, down_up == "downcast") %>%
+    left_join(tdr_depth_summary %>% select(cruise, station, cast, tdr_min_depth_m),
+              by = c("cruise", "station", "cast")) %>%
+    mutate(label = paste0(station, " ", cast, "\n(min: ", round(tdr_min_depth_m, 1), "m)")) %>%
+    ggplot(aes(x = date_time, y = depth_m)) +
+    geom_line(linewidth = 1.2) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "gray60") +
+    scale_y_reverse() +
+    facet_wrap(~ label, scales = "free_x") +
+    labs(title = paste("Bench test cruise —", cr, "| bench offset:",
+                       bench_test_offsets$depth_offset_m[bench_test_offsets$cruise == cr],
+                       "m"),
+         x = NULL, y = "depth (m)") +
+    theme_minimal() +
+    theme(axis.text.x = element_blank(), strip.text = element_text(size = 7))
+  print(p)
+}
+
+## --- Bench tests offsets ---
+# bench offsets
+bench_test_offsets %>%
+  filter(cruise %in% bench_cruises) %>%
+  arrange(cruise) %>%
+  print(n = Inf, width = Inf)
+
+# min depth range per cruise
+tdr_depth_summary %>%
+  filter(cruise %in% bench_cruises) %>%
+  group_by(cruise) %>%
+  summarise(
+    min_depth_min    = min(tdr_min_depth_m),
+    min_depth_median = median(tdr_min_depth_m),
+    min_depth_max    = max(tdr_min_depth_m),
+    n_casts          = n(),
+    .groups = "drop"
+  ) %>%
+  arrange(cruise) %>%
+  print(n = Inf)
+#AR92 = apply bench offset 4.57 to all
+#EN712 = apply bench offset to all
+pass2_decisions <- tribble(
+  ~cruise,  ~offset_m, ~offset_applies_to, ~notes,
+  "AR92",   4.57,      "all_casts",        "bench test offset; median min depth -4.61 matches bench closely",
+  "EN712",  1.94,      "all_casts",        "bench test offset; median min depth -1.62 matches bench closely",
+  "EN715",  2.66,      "all_casts",        "midpoint of bench offset (3.23) and implied offset (2.09); no PX data available",
+  "EN720",  2.93,      "all_casts",        "midpoint of bench offset (3.09) and implied offset (2.78); no PX data available"
+)
+# offset_m sources:
+#   AR92, EN712: bench test offset applied directly 
+#   EN715, EN720: offset_m is the midpoint of (a) bench test offset and 
+#     (b) implied offset, where implied
+#     offset = abs(median min depth across all casts) i.e. the value that would
+#     bring the median surface reading to 0
+
+## apply pass2 decisions to pass1 (for casts still missing offset)
+offsets2 <- offsets1 %>%
+  filter(is.na(calculated_offset_m), cruise %in% bench_cruises) %>%
+  left_join(pass2_decisions %>% select(cruise, offset_m, notes),
+            by = "cruise") %>%
+  mutate(
+    calculated_offset_m = offset_m,
+    offset_source       = "bench_test_cruise_wide"
+  ) %>%
+  select(-offset_m)
+# quizas deberia hacer que esto rbind con offsets1?
+
+## ------------------------------------------ ##
+##  Offsets3: Surface min depth
+## ------------------------------------------ ##
+## Casts with no instrument reference AND suspicious min depth
+
+pass3_candidates <- offsets1 %>%
+  filter(
+    is.na(calculated_offset_m),
+    !cruise %in% bench_cruises,
+    paste(cruise, station, cast) %in%
+      paste(suspicious_casts$cruise, suspicious_casts$station, suspicious_casts$cast)
+  ) %>%
+  select(cruise, station, cast, tdr_min_depth_m)
+
+print(pass3_candidates, n = Inf)
+
+walk(unique(pass3_candidates$cruise), function(cr) {
+  candidates_cr <- pass3_candidates %>% filter(cruise == cr)
+  
+  label_df <- tdr_depth_summary %>%
+    filter(cruise == cr,
+           paste(station, cast) %in% paste(candidates_cr$station, candidates_cr$cast)) %>%
+    left_join(
+      tdr_data %>%
+        filter(cruise == cr, down_up == "downcast") %>%
+        group_by(cruise, station, cast) %>%
+        summarise(label_time = min(date_time), .groups = "drop"),
+      by = c("cruise", "station", "cast")
+    )
+  
+  p <- tdr_data %>%
+    filter(cruise == cr,
+           paste(station, cast) %in% paste(candidates_cr$station, candidates_cr$cast),
+           down_up == "downcast") %>%
+    ggplot(aes(x = date_time, y = depth_m)) +
+    geom_line(linewidth = 1.3) +
+    geom_text(
+      data = label_df,
+      aes(x = label_time, y = tdr_min_depth_m,
+          label = round(tdr_min_depth_m, 1)),
+      vjust = -0.5, hjust = -0.8, size = 3.8, color = "tomato"
+    ) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "gray60") +
+    scale_y_reverse(limits = c(20, -5)) +
+    facet_wrap(~ paste(station, cast), scales = "free_x") +
+    labs(
+      title = paste(cr),
+      x = NULL, y = "depth (m)"
+    ) +
+    theme_minimal() +
+    theme(axis.text.x = element_blank(), strip.text = element_text(size = 7))
+  
+  print(p)
+})
+
+offsets3 <- pass3_candidates %>%
+  mutate(
+    calculated_offset_m = -tdr_min_depth_m,
+    offset_source       = "surface_min_to_zero"
+  )
+
+## ------------------------------------------ ##
+##  Merge 
+## ------------------------------------------ ##
+
+## casts with no reference and clean surface=offset = 0
+offsets_clean <- offsets1 %>%
+  filter(
+    is.na(calculated_offset_m),
+    !cruise %in% bench_cruises,
+    !paste(cruise, station, cast) %in%
+      paste(suspicious_casts$cruise, suspicious_casts$station, suspicious_casts$cast)
+  ) %>%
+  mutate(
+    calculated_offset_m = 0,
+    offset_source       = "no_ref_clean_surface"
+  )
+
+offsets_draft <- bind_rows(
+  offsets1 %>% filter(!is.na(calculated_offset_m)),  # PX + CTD bongo (automated)
+  offsets2,                                           # bench test cruise-wide
+  offsets3,                                           # surface min depth
+  offsets_clean                                       # clean surface, no ref
+) %>%
+  ## add bench_offset_m as reference column (for flagging disagreements)
+  left_join(
+    bench_test_offsets %>% select(cruise, bench_offset_m = depth_offset_m),
+    by = "cruise"
+  ) %>%
+  mutate(
     needs_review = case_when(
-      offset_source == "surface_min"                             ~ TRUE,
+      offset_source == "surface_min"                                      ~ TRUE,
+      offset_source == "bench_test_cruise_wide" & grepl("PENDING", notes) ~ TRUE,
       !is.na(bench_offset_m) &
-        abs(bench_offset_m - calculated_offset_m) > 1           ~ TRUE,
+        !is.na(calculated_offset_m) &
+        abs(bench_offset_m - calculated_offset_m) > 1                    ~ TRUE,
       !is.na(manual_offset_m) &
-        manual_offset_m != calculated_offset_m                  ~ TRUE,
-      TRUE                                                       ~ FALSE
+        !is.na(calculated_offset_m) &
+        manual_offset_m != calculated_offset_m                           ~ TRUE,
+      TRUE                                                                ~ FALSE
     ),
     notes = case_when(
+      !is.na(notes) ~ notes,  # keep pass2/pass3 notes if present
       !is.na(manual_offset_m) & manual_offset_m != calculated_offset_m ~
         paste0("manual=", manual_offset_m,
                " vs calculated=", round(calculated_offset_m, 2)),
       !is.na(bench_offset_m) &
-        abs(bench_offset_m - calculated_offset_m) > 1           ~
+        !is.na(calculated_offset_m) &
+        abs(bench_offset_m - calculated_offset_m) > 1 ~
         paste0("bench_test=", bench_offset_m,
                " vs calculated=", round(calculated_offset_m, 2)),
-      offset_source == "surface_min"                            ~
-        "offset from surface min depth; verify against logsheets",
-      TRUE                                                      ~ NA_character_
+      TRUE ~ NA_character_
     )
   ) %>%
   select(cruise, station, cast,
          calculated_offset_m, offset_source,
          needs_review, notes,
-         bench_offset_m,
-         manual_offset_m,
+         bench_offset_m, manual_offset_m,
          tdr_max_depth_m, px_max_depth_m,
-         ctd_bongo_max_depth_m, min_depth_m) %>%
+         ctd_bongo_max_depth_m, tdr_min_depth_m) %>%
   arrange(cruise, station, cast)
 
 ## quick summaries
 offsets_draft %>% count(offset_source, needs_review)
 
-## duplicates: manual vs calculated
+offsets_draft %>%
+  filter(needs_review) %>%
+  select(cruise, station, cast, calculated_offset_m, offset_source, notes) %>%
+  print(n = Inf)
+
+## manual vs calculated comparison
 offsets_draft %>%
   filter(!is.na(manual_offset_m)) %>%
   select(cruise, station, cast,
          calculated_offset_m, manual_offset_m,
          offset_source, notes) %>%
   print(n = Inf)
-
-## ------------------------------------------ ##
-##  Export draft offsets                   ----
-## ------------------------------------------ ##
-
-out_file <- here("data", "processed",
-                 paste0("tdr_offsets_draft_", Sys.Date(), ".csv"))
-write_csv(offsets_draft, out_file)
-message("Written: ", basename(out_file))
-
-
-
-
-
-
-
 
 ## ------------------------------------------ ##
 ##  TDR offsets comments in meta
@@ -606,8 +798,19 @@ tdr_data %>%
   theme_minimal() +
   theme(axis.text.x = element_blank())
 
-# output
-# file name thruCRUISE_date
+## ------------------------------------------ ##
+##  HERE!!* 
+## ------------------------------------------ ##
+
+## ------------------------------------------ ##
+##  Export offsets                   ----
+## ------------------------------------------ ##
+
+out_file <- here("data", "processed",
+                 paste0("tdr_offsets_draft_", Sys.Date(), ".csv"))
+write_csv(offsets_draft, out_file)
+message("Written: ", basename(out_file))
+
 ################################################################################
 # go to -----------> 04.R
 ################################################################################
