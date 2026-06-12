@@ -206,28 +206,6 @@ offsets %>% filter(cruise == "AT46") %>% arrange(station)
 bench_test_offsets %>% filter(cruise == "AT46") %>% select(-c(tdr_start, tdr_end))
 
 ## ------------------------------------------ ##
-##  Expand cruise-wide offsets to all casts ----
-## ------------------------------------------ ##
-#### MAYBE INSTEAD OF THIS I SHOULD JUST COMPARE THE OFFSET TO MIN DEPTHS
-## for cruises NOT in manual offsets: AR92, EN712, EN715, EN720
-## use the bench test depth_offset_m for all casts on that cruise
-# new_offsets <- bench_test_offsets %>%
-#   filter(!cruise %in% offsets$cruise) %>%  # exclude AT46 - already in offsets
-#   select(cruise, depth_offset_m) %>%
-#   mutate(depth_offset_m = round(depth_offset_m)) %>%
-#   left_join(
-#     tdr_data %>% distinct(cruise, station, cast),
-#     by = "cruise"
-#   ) %>%
-#   rename(offset_m = depth_offset_m)
-# 
-# ## combine with existing manual offsets
-# offsets_combined <- bind_rows(offsets, new_offsets) %>%
-#   arrange(cruise, station, cast)
-# 
-# rm(new_offsets)
-
-## ------------------------------------------ ##
 ##  2. PX sensor data
 ## ------------------------------------------ ##
 
@@ -242,22 +220,6 @@ unique(px_data_bongo$cruise) # 6 cruises
 px_maxdepth <- px_data_bongo %>%
   group_by(cruise, station, cast) %>%
   summarise(px_max_depth_m = max(depth_m, na.rm = TRUE), .groups = "drop")
-
-# ## add cruises without existing offsets, but with PX sensor data
-# ## cruises in px data but not yet in offsets_combined
-# px_only_cruises <- px_maxdepth %>%
-#   filter(!cruise %in% offsets_combined$cruise) %>%
-#   select(cruise, station, cast) %>%
-#   mutate(offset_m = NA_real_)
-# 
-# # offsets combined has manual offsets file + ones with ctd-tdr tests
-# ## add px max depth data to offsets_combined to compare
-# offsets_combined <- bind_rows(offsets_combined, px_only_cruises) %>%
-#   arrange(cruise, station, cast)
-# 
-# ## add px_max_depth_m for everyone
-# offsets_combined <- offsets_combined %>%
-#   left_join(px_maxdepth, by = c("cruise", "station", "cast"))
 
 ## ------------------------------------------ ##
 ##  3. CTD on bongo data               ----
@@ -281,9 +243,6 @@ ctd_bongo_maxdepth <- ctd_bongo_data %>%
 ## ------------------------------------------ ##
 
 ## tdr max depth; all bongo casts
-# tdr_maxdepth_all <- tdr_data %>%
-#   group_by(cruise, station, cast) %>%
-#   summarise(tdr_max_depth_m = max(depth_m, na.rm = TRUE), .groups = "drop")
 
 tdr_depth_summary <- tdr_data %>%
   group_by(cruise, station, cast) %>%
@@ -293,61 +252,12 @@ tdr_depth_summary <- tdr_data %>%
     .groups = "drop"
   )
 
-## ctd bench test max depths (tdr attached to ship CTD rosette)
-# comparing the CTD depth to the TDR depth
-# ctd_test_maxdepth <- bench_test_offsets %>%
-#   select(cruise, station, cast,
-#          tdr_benchtest_max_depth_m = tdr_max_depth_m,
-#          shipctd_benchtest_max_depth_m = ctd_max_depth_m)
-# 
-# ## manual offsets from file
-# manual_offsets <- offsets %>%
-#   mutate(across(c(cruise, station, cast), as.character)) %>%
-#   select(cruise, station, cast, manual_offset_m = offset_m)
-# 
-# ## all unique keys across instruments
-# all_keys <- bind_rows(
-#   tdr_maxdepth_all    %>% select(cruise, station, cast),
-#   px_maxdepth         %>% select(cruise, station, cast),
-#   ctd_bongo_maxdepth  %>% select(cruise, station, cast),
-#   manual_offsets      %>% select(cruise, station, cast)
-# ) %>%
-#   distinct() %>%
-#   arrange(cruise, station, cast)
-# 
-# depth_comparison <- all_keys %>%
-#   left_join(tdr_maxdepth_all,    by = c("cruise", "station", "cast")) %>%
-#   left_join(px_maxdepth,         by = c("cruise", "station", "cast")) %>%
-#   left_join(ctd_bongo_maxdepth,  by = c("cruise", "station", "cast")) %>%
-#   left_join(ctd_test_maxdepth,   by = c("cruise", "station", "cast")) %>%
-#   left_join(manual_offsets,      by = c("cruise", "station", "cast"))
-# 
-# glimpse(depth_comparison)
-# 
-# ## which instruments have data per cruise
-# depth_comparison %>%
-#   group_by(cruise) %>%
-#   summarise(
-#     n_casts              = n(),
-#     has_tdr              = any(!is.na(tdr_max_depth_m)),
-#     has_px               = any(!is.na(px_max_depth_m)),
-#     has_ctd_bongo        = any(!is.na(ctd_bongo_max_depth_m)),
-#     has_ctd_benchtest    = any(!is.na(shipctd_benchtest_max_depth_m)),
-#     has_manual_offset    = any(!is.na(manual_offset_m)),
-#     .groups = "drop"
-#   ) %>%
-#   print(n = Inf)
-
 # which have 2 depths; any with 3 or more???? 
 # check against logsheets? 
 
 ## ------------------------------------------ ##
 ##  Surface min depth check (all cruises)  ----
 ## ------------------------------------------ ##
-
-# tdr_surface <- tdr_data %>%
-#   group_by(cruise, station, cast) %>%
-#   summarise(min_depth_m = min(depth_m, na.rm = TRUE), .groups = "drop")
 
 ## per cruise surface summary
 tdr_depth_summary %>%
@@ -402,7 +312,7 @@ walk(suspicious_cruises, function(cr) {
 })
 
 tdr_depth_summary %>%
-  filter(cruise %in% suspicious_cruises) %>%        # already all casts per cruise
+  filter(cruise %in% suspicious_cruises) %>%        
   ggplot(aes(x = reorder(cast, tdr_min_depth_m), y = tdr_min_depth_m, 
              color = case_when(
                tdr_min_depth_m > 2  ~ "too deep",
