@@ -17,7 +17,7 @@
 ##    detect_and_split()     - wrapper with message for auto_split_casts()
 ##    label_down_up()        - label predeploy / downcast / upcast rows
 ##    bin_by_depth()         - bin to 1-m depth intervals, average temp
-##
+## +new ones
 ###############################################################
 
 ## ------------------------------------------ ##
@@ -215,22 +215,6 @@ detect_and_split <- function(df, base_cast) {
 # all rows after = "upcast"
 #' @param df  Data frame for one cast, sorted by date_time
 #' @return  df with new column `down_up`
-# label_down_up <- function(df) {
-#   df       <- arrange(df, date_time)
-#   peak_idx <- which.max(df$depth_m)
-#   
-#   # find where the cast actually starts descending
-#   # first row where depth exceeds 1 m heading toward the peak
-#   descent_start <- which(df$depth_m > 1)[1]
-#   if (is.na(descent_start)) descent_start <- 1L
-#   
-#   df$down_up <- case_when(
-#     seq_len(nrow(df)) < descent_start   ~ "predeploy",
-#     seq_len(nrow(df)) <= peak_idx       ~ "downcast",
-#     TRUE                                ~ "upcast"
-#   )
-#   df
-# }
 label_down_up <- function(df) {
   df       <- arrange(df, date_time)
   n        <- nrow(df)
@@ -286,6 +270,30 @@ bin_by_depth <- function(df) {
       .groups    = "drop"
     ) %>%
     arrange(cruise, station, cast, date_time)
+}
+
+# --- Extract TDR serial number and lifetime cast counter from DAT file header
+# Returns NA for both fields if no Recorder line found (e.g. non-DAT cruises)
+extract_tdr_serial <- function(dat_path) {
+  header <- readLines(dat_path, n = 20, warn = FALSE)
+  recorder_line <- grep("^##\\tRecorder", header, value = TRUE, useBytes = TRUE)
+  version_line  <- grep("^##\\tVersion",  header, value = TRUE, useBytes = TRUE)
+  
+  if (length(recorder_line) == 0) {
+    return(tibble(dat_file          = basename(dat_path),
+                  tdr_serial        = NA_character_,
+                  tdr_lifetime_cast = NA_integer_,
+                  seastar_version   = NA_character_))
+  }
+  parts <- str_split(recorder_line[1], "\\t")[[1]]
+  version <- if (length(version_line) > 0) str_split(version_line[1], "\\t")[[1]][4] else NA_character_
+  
+  tibble(
+    dat_file          = basename(dat_path),
+    tdr_lifetime_cast = as.integer(parts[3]),
+    tdr_serial        = parts[5],
+    seastar_version   = version
+  )
 }
 
 ## --- for reading API2 data

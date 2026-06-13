@@ -42,7 +42,7 @@ source(here("R", "00_helpers.R"))
 tdr_file <- sort(list.files(here("data", "processed"),
                             pattern = "^tdr_data_no_offset_\\d{4}-\\d{2}-\\d{2}\\.rds$",
                             full.names = TRUE)) %>% tail(1)
-message("Reading: ", basename(tdr_file))
+basename(tdr_file)
 tdr_data <- readRDS(tdr_file)
 
 ## --- TDR-CTD bench tests (from 02_tdr_tidy.R) --- ##
@@ -50,7 +50,10 @@ tdr_ctd_test <- read_csv(here("data", "processed", "tdr_ctd_tests.csv"))
 
 ## --- TDR offsets --- ##
 offsets <- read_csv(here("data", "raw", "tdr_offsets.csv")) %>%
-  mutate(across(c(cruise, station, cast), as.character)) #11 cruises
+  mutate(across(c(cruise, station, cast), as.character)) %>%
+  filter(cast != "B25a") %>%
+  mutate(station = str_replace(station, "^L0(\\d)$", "L\\1")) 
+# 11 cruises
 # this was created a while ago
 
 # created in nes-lter-tow-meta-v3.Rproj; 01_merge_bongo_logs.R
@@ -63,7 +66,7 @@ meta <- read_csv(file.path("data", "raw",
 # on a couple of cruises tdr attached to shipboard CTD
 
 ## ------------------------------------------ ##
-##  Adjust time on tdr ctd test data
+##  1a. Adjust time on tdr ctd test data
 ## ------------------------------------------ ##
 # similar to what was done in 02_tdr_tidy.R line ~507
 # tdr_ctd_tests.csv was written BEFORE clock corrections in 02_tdr_tidy.R
@@ -89,7 +92,7 @@ tdr_ctd_test <- tdr_ctd_test %>%
 rm(clock_offsets)
 
 ## ------------------------------------------ ##
-##  NES-LTER API2: fill in missing metadata
+##  1b. NES-LTER API2: fill in missing metadata
 ## ------------------------------------------ ##
 # 2 casts in the tdr ctd test df are missing meta
 ## manually identify missing station/cast for incomplete rows
@@ -155,7 +158,7 @@ ggplot(tdr_ctd_test, aes(x = date_time, y = depth_m)) +
   theme(axis.text.x = element_blank())
 
 ## ------------------------------------------ ##
-##  NES-LTER API2: fetch ship CTD max depth ----
+##  1c. NES-LTER API2: fetch ship CTD max depth ----
 ## ------------------------------------------ ##
 
 ## --- get tdr max depth --- 
@@ -235,15 +238,15 @@ unique(ctd_bongo_data$cruise) # 2 cruises only: EN668, EN706
 ## ctd bongo max depth per cast
 ctd_bongo_maxdepth <- ctd_bongo_data %>%
   group_by(cruise, station, cast) %>%
-  summarise(ctd_bongo_max_depth_m = max(depth_m, na.rm = TRUE), .groups = "drop") %>%
-  mutate(cast = str_remove(cast, "^B")) 
+  filter(note_code != "no_max_depth") %>%
+  summarise(ctd_bongo_max_depth_m = max(depth_m, na.rm = TRUE), .groups = "drop")
+  #mutate(cast = str_remove(cast, "^B")) 
 
 ## ------------------------------------------ ##
-##  TDR max depth and surface min depth     ----
+##  4. TDR max depth and surface min depth     ----
 ## ------------------------------------------ ##
 
 ## tdr max depth; all bongo casts
-
 tdr_depth_summary <- tdr_data %>%
   group_by(cruise, station, cast) %>%
   summarize(
@@ -252,11 +255,8 @@ tdr_depth_summary <- tdr_data %>%
     .groups = "drop"
   )
 
-# which have 2 depths; any with 3 or more???? 
-# check against logsheets? 
-
 ## ------------------------------------------ ##
-##  Surface min depth check (all cruises)  ----
+##  4a. Surface min depth check (all cruises)  ----
 ## ------------------------------------------ ##
 
 ## per cruise surface summary
@@ -299,11 +299,34 @@ suspicious_casts <- tdr_depth_summary %>%
 walk(suspicious_cruises, function(cr) {
   p <- tdr_data %>%
     filter(cruise == cr) %>%
+    left_join(tdr_depth_summary %>% select(cruise, station, cast, tdr_min_depth_m),
+              by = c("cruise", "station", "cast")) %>%
     ggplot(aes(x = date_time, y = depth_m)) +
     geom_line(linewidth = 2) +
     geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
     scale_y_reverse(limits = c(25, -5)) +
-    facet_wrap(~ paste(station, cast), scales = "free_x") +
+    facet_wrap(~ paste(station, cast, paste0("(min: ", round(tdr_min_depth_m, 1), "m)")),
+               scales = "free_x") +
+    labs(x = NULL, y = "depth (m)",
+         title = paste("TDR depth profiles —", cr)) +
+    theme_minimal() +
+    theme(axis.text.x = element_blank(), strip.text = element_text(size = 7))
+  print(p)
+})
+
+other_cruises <- unique(tdr_data$cruise[!tdr_data$cruise %in% suspicious_cruises])
+
+walk(other_cruises, function(cr) {
+  p <- tdr_data %>%
+    filter(cruise == cr) %>%
+    left_join(tdr_depth_summary %>% select(cruise, station, cast, tdr_min_depth_m),
+              by = c("cruise", "station", "cast")) %>%
+    ggplot(aes(x = date_time, y = depth_m)) +
+    geom_line(linewidth = 2) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+    scale_y_reverse(limits = c(25, -5)) +
+    facet_wrap(~ paste(station, cast, paste0("(min: ", round(tdr_min_depth_m, 1), "m)")),
+               scales = "free_x") +
     labs(x = NULL, y = "depth (m)",
          title = paste("TDR depth profiles —", cr)) +
     theme_minimal() +
@@ -312,7 +335,7 @@ walk(suspicious_cruises, function(cr) {
 })
 
 tdr_depth_summary %>%
-  filter(cruise %in% suspicious_cruises) %>%        
+  #filter(cruise %in% suspicious_cruises) %>%        
   ggplot(aes(x = reorder(cast, tdr_min_depth_m), y = tdr_min_depth_m, 
              color = case_when(
                tdr_min_depth_m > 2  ~ "too deep",
@@ -329,18 +352,18 @@ tdr_depth_summary %>%
     name = "surface depth"
   ) +
   facet_wrap(~ cruise, scales = "free_x") +
-  labs(x = "cast", y = "min depth (m)") +
+  labs(x = "cast", y = "Surface min depth (m)") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7))
 
 ## ------------------------------------------ ##
-##  Offsets1: TDR compared to PX
+##  Offsets1: TDR compared to PX or CTD depth
 ## ------------------------------------------ ##
 
 ## all unique cast keys across instruments + manual offsets
 all_keys <- bind_rows(
   tdr_depth_summary %>% select(cruise, station, cast),
-  px_maxdepth      %>% select(cruise, station, cast),
+  px_maxdepth       %>% select(cruise, station, cast),
   ctd_bongo_maxdepth %>% select(cruise, station, cast),
   offsets %>% mutate(across(c(cruise, station, cast), as.character)) %>%
     select(cruise, station, cast)
@@ -384,39 +407,14 @@ bench_cruises <- bench_test_offsets %>%
 bench_test_offsets %>% filter(cruise %in% bench_cruises) %>% print(width = Inf)
 
 ## --- Plot all casts for bench test cruises ---
-tdr_data %>%
-  filter(cruise %in% bench_cruises) %>%
-  left_join(tdr_depth_summary, by = c("cruise", "station", "cast")) %>%
-  filter(down_up == "downcast") %>%
-  ggplot(aes(x = date_time, y = depth_m)) +
-  geom_line(linewidth = 0.3) +
-  geom_text(
-    data = tdr_depth_summary %>%
-      filter(cruise %in% bench_cruises) %>%
-      left_join(tdr_data %>% filter(down_up == "downcast") %>%
-                  group_by(cruise, station, cast) %>%
-                  summarise(label_time = min(date_time), .groups = "drop"),
-                by = c("cruise", "station", "cast")),
-    aes(x = label_time, y = tdr_min_depth_m,
-        label = round(tdr_min_depth_m, 1)),
-    vjust = -0.5, size = 2.5, color = "tomato"
-  ) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "gray60") +
-  scale_y_reverse() +
-  facet_wrap(~ paste(cruise, station, cast), scales = "free") +
-  labs(
-    title = "Bench test cruises — downcast depth profiles (min depth labeled)",
-    x = NULL, y = "depth (m)"
-  ) +
-  theme_minimal() +
-  theme(axis.text.x = element_blank(), strip.text = element_text(size = 7))
-
 walk(bench_cruises, function(cr) {
+  bench_offset <- bench_test_offsets$depth_offset_m[bench_test_offsets$cruise == cr]
+  
   label_df <- tdr_depth_summary %>%
     filter(cruise == cr) %>%
     left_join(
       tdr_data %>%
-        filter(cruise == cr, down_up == "downcast") %>%
+        filter(cruise == cr) %>% #, down_up == "downcast"
         group_by(cruise, station, cast) %>%
         summarise(label_time = min(date_time), .groups = "drop"),
       by = c("cruise", "station", "cast")
@@ -429,16 +427,16 @@ walk(bench_cruises, function(cr) {
     ggplot(aes(x = date_time, y = depth_m)) +
     geom_line(linewidth = 0.3) +
     geom_text(
-      data = label_df,
-      aes(x = label_time, y = tdr_min_depth_m,
-          label = round(tdr_min_depth_m, 1)),
+      data = label_df, aes(x = label_time, y = tdr_min_depth_m,
+      label = round(tdr_min_depth_m, 1)),
       vjust = 0.5, hjust = -1, size = 4.5, color = "tomato"
     ) +
     geom_hline(yintercept = 0, linetype = "dashed", color = "gray60") +
-    scale_y_reverse() +
+    scale_y_reverse(limits = c(25, -5)) +
     facet_wrap(~ paste(station, cast), scales = "free") +
     labs(
-      title = paste("Bench test cruises — downcast depth profiles —", cr),
+      title = paste("Bench test — downcast —", cr,
+                    "| bench offset:", bench_offset, "m"),
       x = NULL, y = "depth (m)"
     ) +
     theme_minimal() +
@@ -446,26 +444,6 @@ walk(bench_cruises, function(cr) {
   
   print(p)
 })
-
-for (cr in bench_cruises) {
-  p <- tdr_data %>%
-    filter(cruise == cr, down_up == "downcast") %>%
-    left_join(tdr_depth_summary %>% select(cruise, station, cast, tdr_min_depth_m),
-              by = c("cruise", "station", "cast")) %>%
-    mutate(label = paste0(station, " ", cast, "\n(min: ", round(tdr_min_depth_m, 1), "m)")) %>%
-    ggplot(aes(x = date_time, y = depth_m)) +
-    geom_line(linewidth = 1.2) +
-    geom_hline(yintercept = 0, linetype = "dashed", color = "gray60") +
-    scale_y_reverse() +
-    facet_wrap(~ label, scales = "free_x") +
-    labs(title = paste("Bench test cruise —", cr, "| bench offset:",
-                       bench_test_offsets$depth_offset_m[bench_test_offsets$cruise == cr],
-                       "m"),
-         x = NULL, y = "depth (m)") +
-    theme_minimal() +
-    theme(axis.text.x = element_blank(), strip.text = element_text(size = 7))
-  print(p)
-}
 
 ## --- Bench tests offsets ---
 # bench offsets
@@ -485,28 +463,21 @@ tdr_depth_summary %>%
     n_casts          = n(),
     .groups = "drop"
   ) %>%
-  arrange(cruise) %>%
-  print(n = Inf)
-#AR92 = apply bench offset 4.57 to all
-#EN712 = apply bench offset to all
-pass2_decisions <- tribble(
+  arrange(cruise) 
+
+## --- apply offsets --- 
+offsets2_decisions <- tribble(
   ~cruise,  ~offset_m, ~offset_applies_to, ~notes,
   "AR92",   4.57,      "all_casts",        "bench test offset; median min depth -4.61 matches bench closely",
   "EN712",  1.94,      "all_casts",        "bench test offset; median min depth -1.62 matches bench closely",
-  "EN715",  2.66,      "all_casts",        "midpoint of bench offset (3.23) and implied offset (2.09); no PX data available",
-  "EN720",  2.93,      "all_casts",        "midpoint of bench offset (3.09) and implied offset (2.78); no PX data available"
+  "EN715",  2,         "all_casts",        "midpoint of bench offset (3.23) and implied offset (2.09); no PX data available",
+  "EN720",  2.9,      "all_casts",        "midpoint of bench offset (3.09) and implied offset (2.78); no PX data available"
 )
-# offset_m sources:
-#   AR92, EN712: bench test offset applied directly 
-#   EN715, EN720: offset_m is the midpoint of (a) bench test offset and 
-#     (b) implied offset, where implied
-#     offset = abs(median min depth across all casts) i.e. the value that would
-#     bring the median surface reading to 0
 
 ## apply pass2 decisions to pass1 (for casts still missing offset)
 offsets2 <- offsets1 %>%
   filter(is.na(calculated_offset_m), cruise %in% bench_cruises) %>%
-  left_join(pass2_decisions %>% select(cruise, offset_m, notes),
+  left_join(offsets2_decisions %>% select(cruise, offset_m, notes),
             by = "cruise") %>%
   mutate(
     calculated_offset_m = offset_m,
@@ -520,7 +491,7 @@ offsets2 <- offsets1 %>%
 ## ------------------------------------------ ##
 ## Casts with no instrument reference AND suspicious min depth
 
-pass3_candidates <- offsets1 %>%
+offsets3_candidates <- offsets1 %>%
   filter(
     is.na(calculated_offset_m),
     !cruise %in% bench_cruises,
@@ -529,14 +500,15 @@ pass3_candidates <- offsets1 %>%
   ) %>%
   select(cruise, station, cast, tdr_min_depth_m)
 
-print(pass3_candidates, n = Inf)
+print(offsets3_candidates, n = Inf)
 
-walk(unique(pass3_candidates$cruise), function(cr) {
-  candidates_cr <- pass3_candidates %>% filter(cruise == cr)
+walk(unique(offsets3_candidates$cruise), function(cr) {
+  candidates_cr <- offsets3_candidates %>% filter(cruise == cr)
   
   label_df <- tdr_depth_summary %>%
     filter(cruise == cr,
-           paste(station, cast) %in% paste(candidates_cr$station, candidates_cr$cast)) %>%
+           paste(station, cast) %in% 
+             paste(candidates_cr$station, candidates_cr$cast)) %>%
     left_join(
       tdr_data %>%
         filter(cruise == cr, down_up == "downcast") %>%
@@ -547,7 +519,8 @@ walk(unique(pass3_candidates$cruise), function(cr) {
   
   p <- tdr_data %>%
     filter(cruise == cr,
-           paste(station, cast) %in% paste(candidates_cr$station, candidates_cr$cast),
+           paste(station, cast) %in% 
+             paste(candidates_cr$station, candidates_cr$cast),
            down_up == "downcast") %>%
     ggplot(aes(x = date_time, y = depth_m)) +
     geom_line(linewidth = 1.3) +
@@ -570,11 +543,51 @@ walk(unique(pass3_candidates$cruise), function(cr) {
   print(p)
 })
 
-offsets3 <- pass3_candidates %>%
+offsets3 <- offsets3_candidates %>%
   mutate(
     calculated_offset_m = -tdr_min_depth_m,
     offset_source       = "surface_min_to_zero"
   )
+
+## ------------------------------------------ ##
+# includes the following cruises: 
+# 2018 = EN608   = 1.3m offset
+# 2018 = EN617   = 1m offset
+##
+# 2019 = EN627   = 1.5m
+# 2019 = EN644   = 4m = not equal; 2 tdr need to check
+##
+# 2020 = EN649   = GOOD = 0m
+# 2020 = EN655   = L2-L5 = 6m based on logsheet
+# 2020 = EN657   = GOOD = 0m
+##
+# 2021 = :(
+##
+# 2022 = AT46    = 
+# L1 = 10 
+# for rest of stations just bring min depth to 0
+# L11 , L9, L7, 4m??
+# 2022 = EN687   = GOOD = 0m
+##
+# 2023 = HRS2303 = ~5 maybe bring down to 0
+# 2023 = EN706   = ctd avail need offset
+# 2023 = AR77    = GOOD = 0m 
+##
+# 2024 = EN712   = -1.1 to -2
+# 2024 = EN715   = -1.6 to -2.5
+# The depth of the CTD was 135.7 m and the depth of the TDR was 132.7 m, so the offset was 3 m. 
+# 2024 = EN720   = -2.5 to -2.9
+# The maximum TDR depth while mounted on the rosette was 197.91 m while the CTD (Seabird reading) depth was 201 m so the TDR had an offset of 3.09 m. The TDR used during this cruise was SN: C11871. 
+# 2024 = AE2426  = px sensor? -3.1 to -3.5
+##
+# 2025 = EN727   =  The TDR used during this cruise was SN: C11871. 
+# 2025 = AR88    = surf -3.9 to -4.5
+# 2025 = AR92    = surf -4.4 to -4.9
+# 2025 = AR95    = surf -5.1 to -5.3
+##
+# 2026 = AR99    = -5.6 to -6
+# 2026 = ***need to add HRS2601***
+
 
 ## ------------------------------------------ ##
 ##  Merge 
@@ -711,6 +724,8 @@ tdr_data %>%
 ## ------------------------------------------ ##
 ##  HERE!!* 
 ## ------------------------------------------ ##
+# which have 2 depths; any with 3 or more???? 
+# check against logsheets? 
 
 ## ------------------------------------------ ##
 ##  Export offsets                   ----

@@ -92,15 +92,51 @@ all_csv_paths <- list.files(RAW_DIR,
 message(length(all_csv_paths), " CSV file(s).") # ~240+ files
 
 ## ------------------------------------------ ##
+##  1b. TDR serial numbers from DAT headers
+## ------------------------------------------ ##
+
+dat_files <- list.files(RAW_DIR,
+                        full.names = TRUE,
+                        recursive  = TRUE) %>%
+  keep(~ tools::file_ext(.x) %in% c("DAT", "dat") | 
+         (tools::file_ext(.x) == "" & 
+            str_detect(basename(.x), "^[12]\\$")))  # extensionless Star-Oddi files start with 1$
+length(dat_files) #should be 236
+
+tdr_serials <- map_dfr(dat_files, extract_tdr_serial) %>%
+  mutate(
+    dat_file = str_remove(dat_file, "(?i)\\.dat$"),
+    # handle both _ (newer) and - (older) separators
+    cruise  = str_extract(dat_file, "(?<=[_-])[A-Z]{2,3}[0-9]+[A-Z]?(?=[_-])"),
+    station = str_extract(dat_file, "(?<=[_-])(L[0-9]+[a-z]?|MVCO|Lu11c|u[0-9]+[a-z]*)(?=[_-])"),
+    cast    = str_extract(dat_file, "(?<=[_-])(B[0-9]+)(?=$|[_&-])")
+  ) %>%
+  filter(!str_detect(dat_file, "test|TDRCTD")) %>%  # drop bench test files
+  distinct(cruise, station, cast, .keep_all = TRUE) %>%
+  select(cruise, station, cast, tdr_serial, tdr_lifetime_cast, seastar_version)
+
+## ------------------------------------------ ##
 ##  2. Read data & combine               ----
 ## ------------------------------------------ ##
 
 all_data <- lapply(all_csv_paths, read_tdr_csv) %>%
   Filter(Negate(is.null), .) %>%
-  bind_rows()
+  bind_rows() %>%
+  left_join(tdr_serials, by = c("cruise", "station", "cast")) # add tdr sn
 message("  Total rows: ", nrow(all_data))
 
 length(unique(all_data$cruise)) # 21 cruises
+
+## add missing Serial numbers
+all_data <- all_data %>%
+  group_by(cruise) %>%
+  mutate(tdr_serial = if_else(is.na(tdr_serial),
+                              first(na.omit(tdr_serial)),
+                              tdr_serial),
+         seastar_version = if_else(is.na(seastar_version),
+                                   first(na.omit(seastar_version)),
+                                   seastar_version)) %>%
+  ungroup()
 
 ## ------------------------------------------ ##
 ##  Inspect data          ----
@@ -163,8 +199,13 @@ all_data %>%
   arrange(min_date) %>%
   print(n = Inf)
 
+all_data %>%
+  distinct(cruise, station, tdr_serial, seastar_version) %>%
+  arrange(cruise) %>% print(n=500)
+
 # --- Station and cast label ----
-sapply(c("cruise", "station", "cast"), function(col) sort(unique(all_data[[col]])))
+sapply(c("cruise", "station", "cast", "tdr_serial", "tdr_lifetime_cast"), 
+       function(col) sort(unique(all_data[[col]])))
 
 ## ------------------------------------------ ##
 ##  3. Parse timestamps & clean labels  ----

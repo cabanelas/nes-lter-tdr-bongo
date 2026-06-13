@@ -280,7 +280,7 @@ rm(p, cr)
 ## EN706 L8B15 = stopped recording on upcast right after max depth
 ## EN706 L3B20 = started recording mid downcast (~12m)
 # trim end time for EN706 L6 B19 left ctd running while on deck 09:39
-
+## EN706 L4 B5 = all upcast no downcast 
 ## EN668 L1B1 = started recording mid downcast (~8m)
 
 ## ------------------------------------------ ##
@@ -358,6 +358,13 @@ ctd_cnv_data %>%
 ctd_cnv_data <- ctd_cnv_data %>%
   filter(is.na(depth_m) | depth_m >= 0)
 
+# EN706 L4B5 upcast only; no downcast point; no max depth 
+ctd_cnv_data <- ctd_cnv_data %>%
+  mutate(down_up = case_when(
+    cruise == "EN706" & station == "L4" & cast == "B5" ~ "upcast",
+    TRUE ~ down_up
+  ))
+
 ## ------------------------------------------ ##
 ##  Plot final casts    ----
 ## ------------------------------------------ ##
@@ -411,22 +418,22 @@ ctd_cast_notes <- tribble(
   ## EN706 L11B9 = patched L11 B9_B (downcast) and L11 B9_C (upcast)
   ##               max depth is not available for this cast due to ctd turning off
   ##               logsheet comments say ctd y tubing got disconned midcast
-  "EN706",  "L11",    "B9",   "patched_cast",   "Patched from B9_B downcast and B9_C upcast; CTD turned off mid-cast ~193 sec gap near max depth; no max depth available; logsheet notes Ytubing disconnected mid-cast",
+  "EN706",  "L11",   "B9",   "no_max_depth",   "Patched from B9_B downcast and B9_C upcast; CTD turned off mid-cast ~193 sec gap near max depth; no max depth available; logsheet notes Ytubing disconnected mid-cast",
   
   # --- incomplete profiles: started mid-downcast ---
-  "EN706",  "L5",     "B6",   "ctd_late_start", "CTD started recording mid-downcast ~40 m",
-  "EN706",  "L10",    "B10",  "ctd_late_start", "CTD started recording mid-downcast ~40 m",
-  "EN706",  "L7",     "B14",  "ctd_late_start", "CTD started recording mid-downcast ~25 m",
-  "EN706",  "L3",     "B20",  "ctd_late_start", "CTD started recording mid-downcast ~12 m",
-  "EN668",  "L1",     "B1",   "ctd_late_start", "CTD started recording mid-downcast ~8 m",
+  "EN706",  "L4",    "B5",   "no_max_depth",   "CTD started recording mid-upcast ~20 m; CNV filename had cast B04; corrected to B5 based on logsheet",
+  "EN706",  "L5",    "B6",   "ctd_late_start", "CTD started recording mid-downcast ~40 m",
+  "EN706",  "L10",   "B10",  "ctd_late_start", "CTD started recording mid-downcast ~40 m",
+  "EN706",  "L7",    "B14",  "ctd_late_start", "CTD started recording mid-downcast ~25 m",
+  "EN706",  "L3",    "B20",  "ctd_late_start", "CTD started recording mid-downcast ~12 m",
+  "EN668",  "L1",    "B1",   "ctd_late_start", "CTD started recording mid-downcast ~8 m",
   
   # --- incomplete profiles: stopped early ---
-  "EN706",  "L8",     "B15",  "ctd_early_end",  "CTD stopped recording on upcast immediately after max depth",
+  "EN706",  "L8",    "B15",  "ctd_early_end",  "CTD stopped recording on upcast immediately after max depth",
   
   # --- metadata fixes: original CNV header/filename errors ---
-  "EN668",  "L4",     "B5",   "header_typo_corrected","CNV header had station L05; corrected to L4 based on filename and logsheet",
-  "EN706",  "L4",     "B5",   "filename_typo_corrected","CNV filename had cast B04; corrected to B5 based on logsheet",
-  "EN668",  "L9",     "B14",  "filename_typo_corrected","CNV filename had cast B15; corrected to B14 based on logsheet"
+  "EN668",  "L4",    "B5",   "typo_corrected", "CNV header had station L05; corrected to L4 based on filename and logsheet",
+  "EN668",  "L9",    "B14",  "typo_corrected", "CNV filename had cast B15; corrected to B14 based on logsheet"
 )
 
 ctd_cnv_data <- ctd_cnv_data %>%
@@ -465,15 +472,20 @@ ctd_cnv_data %>%
 ## ------------------------------------------ ##
 ctd_cnv_data %>%
   summarise(
-    n_neg_depth      = sum(depth_m < 0,   na.rm = TRUE),
-    n_deep           = sum(depth_m > 300,  na.rm = TRUE),
-    n_temp_low       = sum(temp_C < -2,    na.rm = TRUE),
-    n_temp_high      = sum(temp_C > 30,    na.rm = TRUE),
-    n_cond_negative  = sum(conductivity_sm < 0, na.rm = TRUE),
-    n_na_depth       = sum(is.na(depth_m)),
-    n_na_temp        = sum(is.na(temp_C)),
-    n_na_time        = sum(is.na(date_time))
+    n_neg_depth   = sum(depth_m < 0,   na.rm = TRUE),
+    n_deep        = sum(depth_m > 300,  na.rm = TRUE),
+    n_temp_low    = sum(temp_C < -2,    na.rm = TRUE),
+    n_temp_high   = sum(temp_C > 30,    na.rm = TRUE),
+    n_cond_neg    = sum(conductivity_sm < 0, na.rm = TRUE),
+    n_na_depth    = sum(is.na(depth_m)),
+    n_na_temp     = sum(is.na(temp_C)),
+    n_na_time     = sum(is.na(date_time))
   )
+
+# the NAs are from patching L11B9
+ctd_cnv_data %>%
+  filter(is.na(depth_m)) %>%
+  count(cruise, station, cast)
 
 ## ------------------------------------------ ##
 ##  c. Cast-level checks          ----
