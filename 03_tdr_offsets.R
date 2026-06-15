@@ -673,6 +673,23 @@ offsets_draft %>%
 # the rest seem good
 # wondering about EN644 L1, L2 and EN655 L1 
 
+offsets_draft %>%
+  filter(offset_source %in% c("px_tdr", "surface_min_to_zero", "bench_test_cruise_wide")) %>%
+  filter(cruise %in% c("AE2426","AR77","AR88","AR92","AR95","AR99","EN727")) %>%
+  ggplot(aes(x = paste(station, cast), y = calculated_offset_m, color = offset_source)) +
+  geom_point(size = 3) +
+  geom_hline(
+    data = . %>% group_by(cruise) %>% summarise(med = median(calculated_offset_m)),
+    aes(yintercept = med), linetype = "dotted", color = "tomato"
+  ) +
+  geom_hline(aes(yintercept = bench_offset_m), linetype = "dashed", color = "gray50") +
+  facet_wrap(~ cruise, scales = "free_x") +
+  labs(x = NULL, y = "offset (m)", color = "source") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7))
+
+# need to check AR95 L3B19; AR92 L1B1; AR99 L3 B18;AR99 L4 B17 ; AR88   L7      B16 
+
 ## ------------------------------------------ ##
 ##  TDR offsets comments in meta
 ## ------------------------------------------ ##
