@@ -11,15 +11,17 @@
 ##           trim to elog deploy/recover windows, label downcast/upcast,
 ##           and export cleaned bongo-only PX sensor data.
 ##
-##  Input:   data/raw/px_sensor/{cruise}_px_sensor/*.csv
-##           data/raw/elog_zoop_tows_thruAR99_2026-04-14.csv
-##                    (from nes-lter-api-pulls.Rproj; 01_elog_pull.R)
-##           data/raw/all-nes-lter-bongologs-20260526.csv
-##                  from nes-lter-tow-meta-v3.Rproj; 01_merge_bongo_logs.R
-##           NES-LTER API2 (https://github.com/WHOIGit/nes-lter-api-2/wiki) for MWT elog
+##  Input: data/raw/  
+##          px_sensor/{cruise}_px_sensor/*.csv
+##          elog_zoop_tows_thruAR99_2026-04-14.csv 
+##            (from nes-lter-api-pulls.Rproj; 01_elog_pull.R)
+##          all-nes-lter-bongologs-20260526.csv
+##            (from nes-lter-tow-meta-v3.Rproj; 01_merge_bongo_logs.R)
+##  NES-LTER API2 (https://github.com/WHOIGit/nes-lter-api-2/wiki) for MWT elog
 ##
 ##  Output:  data/processed/px_data_bongo_YYYY-MM-DD.rds
 ##           data/processed/px_data_bongo.csv
+##           data/processed/px_column_reference.csv
 ##           figures/px_sensor_profiles_check.pdf
 ##           figures/px_sensor_profiles_trimmed.pdf
 ##           figures/px_sensor_profiles_labeled.pdf           
@@ -34,11 +36,13 @@
 # PxSensor is generally not used at MVCO nor L1 -- too shallow 
 
 # AE2426 L2, L4, L6, L7, L8                          
-# AR88   L2, L3, L4, L5, L6, L7, L8, L9, L10, L11,    
-# AR92   L1, L2, L3, L4, L5, L6, L7, L8, L9, L10, L11, 
-# AR95   L1, L2, L3, L4, L5, L7, L8, L9, L10, L11,   
+# AR88   L2, L3, L4, L5, L6, L7, L8, L9, L10, L11    
+# AR92   L1, L2, L3, L4, L5, L6, L7, L8, L9, L10, L11
+# AR95   L1, L2, L3, L4, L5, L7, L8, L9, L10, L11   
 # AR99   L3, L4, L5, L6, L7, L8, L10                 
 # EN727  L3, L4, L5, L6, L7, L8, L10, L11   
+
+## AR99 L11 B9: PX sensor did not record; PX sensor logsheet max depth ~199m
 
 ## ------------------------------------------ ##
 ##  Packages               ----
@@ -203,19 +207,19 @@ xml_info %>%
 
 read_xml(xml_files[1]) %>% {
   tibble(
-    system_name       = xml_find_first(., ".//system_name")       %>% xml_text(),
-    user              = xml_find_first(., ".//user")              %>% xml_text(),
-    date              = xml_find_first(., ".//date")              %>% xml_text(),
-    source_name       = xml_find_first(., ".//source_name")       %>% xml_text(),
-    source_type       = xml_find_first(., ".//source_type")       %>% xml_text(),
-    sensor_type       = xml_find_first(., ".//type")              %>% xml_text(),
-    update_rate       = xml_find_first(., ".//update_rate")       %>% xml_text(),
-    basic_type_1      = xml_find_first(., ".//basic_type_sensor_1") %>% xml_text(),
-    basic_type_2      = xml_find_first(., ".//basic_type_sensor_2") %>% xml_text(),
-    basic_type_3      = xml_find_first(., ".//basic_type_sensor_3") %>% xml_text(),
-    variable_ch1      = xml_find_first(., ".//variable_channel_1") %>% xml_text(),
-    variable_ch2      = xml_find_first(., ".//variable_channel_2") %>% xml_text(),
-    variable_ch3      = xml_find_first(., ".//variable_channel_3") %>% xml_text()
+    system_name    = xml_find_first(., ".//system_name")       %>% xml_text(),
+    user           = xml_find_first(., ".//user")              %>% xml_text(),
+    date           = xml_find_first(., ".//date")              %>% xml_text(),
+    source_name    = xml_find_first(., ".//source_name")       %>% xml_text(),
+    source_type    = xml_find_first(., ".//source_type")       %>% xml_text(),
+    sensor_type    = xml_find_first(., ".//type")              %>% xml_text(),
+    update_rate    = xml_find_first(., ".//update_rate")       %>% xml_text(),
+    basic_type_1   = xml_find_first(., ".//basic_type_sensor_1") %>% xml_text(),
+    basic_type_2   = xml_find_first(., ".//basic_type_sensor_2") %>% xml_text(),
+    basic_type_3   = xml_find_first(., ".//basic_type_sensor_3") %>% xml_text(),
+    variable_ch1   = xml_find_first(., ".//variable_channel_1") %>% xml_text(),
+    variable_ch2   = xml_find_first(., ".//variable_channel_2") %>% xml_text(),
+    variable_ch3   = xml_find_first(., ".//variable_channel_3") %>% xml_text()
   )
 }
 rm(xml_info, xml_files)
@@ -246,16 +250,10 @@ elog_bongo_px_window <- elog %>%
   filter(!is.na(elog_deploy), !is.na(elog_recover))
 
 ## cruise-specific grace periods (in minutes)
-## EN727: px sensor started 11-34 min before elog deploy
-## AR92 MWT: px started ~10 min before MWT deploy
-grace_bongo_default <- 2
-grace_bongo_en727   <- 40
-
-grace_mwt_default   <- 2  
-grace_mwt_ar92      <- 15
-
 elog_bongo_px_window <- elog_bongo_px_window %>%
-  mutate(grace = if_else(cruise == "EN727", grace_bongo_en727, grace_bongo_default))
+  mutate(grace = if_else(cruise == "EN727", 40, 2))
+# EN727: px sensor started 11-34 min before elog deploy = using 40 min buffer
+# other cruises get 2 min buffer
 
 px_cast_meta <- px_data %>%
   distinct(cruise, cast_start) %>%
@@ -263,7 +261,8 @@ px_cast_meta <- px_data %>%
   filter(cast_start >= elog_deploy - minutes(grace),
          cast_start <= elog_recover) %>%
   group_by(cruise, cast_start) %>%
-  slice_min(abs(as.numeric(difftime(cast_start, elog_deploy, units = "mins"))), n = 1) %>%
+  slice_min(abs(as.numeric(difftime(cast_start, elog_deploy, units = "mins"))), 
+            n = 1) %>%
   ungroup() %>%
   select(cruise, cast_start, station, cast, elog_deploy, elog_recover)
 
@@ -278,7 +277,7 @@ px_data %>%
   arrange(cruise, cast_start) %>%
   print(n = Inf)
 
-rm(elog_bongo_px_window, grace_bongo_default, grace_bongo_en727, elog)
+rm(elog_bongo_px_window, elog)
 
 ## ------------------------------------------ ##
 ##  Filter out Isaacs-Kidd Midwater Trawl  ----
@@ -311,13 +310,16 @@ px_mwt <- px_data %>%
   anti_join(px_cast_meta, by = c("cruise", "cast_start")) %>%
   left_join(
     elog_mwt_window %>%
-      mutate(grace = if_else(cruise == "AR92", grace_mwt_ar92, grace_mwt_default)),
+      # AR92 MWT: px started ~10 min before MWT deploy
+      # giving it 15 min buffer; the rest get 2 min buffer
+      mutate(grace = if_else(cruise == "AR92", 15, 2)),
     by = "cruise", relationship = "many-to-many"
   ) %>%
   filter(cast_start >= mwt_deploy - minutes(grace),
          cast_start <= mwt_recover) %>%
   group_by(cruise, cast_start) %>%
-  slice_min(abs(as.numeric(difftime(cast_start, mwt_deploy, units = "mins"))), n = 1) %>%
+  slice_min(abs(as.numeric(difftime(cast_start, mwt_deploy, units = "mins"))), 
+            n = 1) %>%
   ungroup() %>%
   mutate(instrument = "MWT") %>%
   select(cruise, cast_start, station, cast, instrument)
@@ -329,7 +331,8 @@ truly_unmatched <- px_data %>%
   anti_join(px_mwt, by = c("cruise", "cast_start"))
 
 cat("Unmatched (not bongo):  ", nrow(px_data %>% distinct(cruise, cast_start) %>%
-                                       anti_join(px_cast_meta, by = c("cruise", "cast_start"))), "\n")
+                                       anti_join(px_cast_meta, 
+                                                 by = c("cruise", "cast_start"))), "\n")
 cat("Truly unidentified:     ", nrow(truly_unmatched), "\n")
 cat("Total px cast_starts:   ", n_distinct(paste(px_data$cruise, px_data$cast_start)), "\n")
 cat("Matched to bongo:       ", nrow(px_cast_meta), "\n")
@@ -341,7 +344,8 @@ if (nrow(truly_unmatched) > 0) {
 }
 
 ## check what was happening in elog around these unidentified cast_starts
-elog_all_instruments <- map_dfr(tolower(unique(truly_unmatched$cruise)), function(cr) {
+elog_all_instruments <- map_dfr(tolower(unique(truly_unmatched$cruise)), 
+                                function(cr) {
   url <- paste0("https://nes-lter-api.whoi.edu/api/events/", cr, ".csv")
   message("  fetching: ", cr)
   df <- safe_read_csv(url)
@@ -350,13 +354,16 @@ elog_all_instruments <- map_dfr(tolower(unique(truly_unmatched$cruise)), functio
 })
 
 truly_unmatched %>%
-  left_join(elog_all_instruments, by = "cruise", relationship = "many-to-many") %>%
-  mutate(diff_mins = as.numeric(difftime(cast_start, dateTime8601, units = "mins"))) %>%
+  left_join(elog_all_instruments, by = "cruise", 
+            relationship = "many-to-many") %>%
+  mutate(diff_mins = as.numeric(difftime(cast_start, dateTime8601, 
+                                         units = "mins"))) %>%
   filter(abs(diff_mins) <= 60) %>%
   group_by(cruise, cast_start) %>%
   slice_min(abs(diff_mins), n = 5) %>%
   ungroup() %>%
-  select(cruise, cast_start, Instrument, Action, Station, Cast, dateTime8601, diff_mins) %>%
+  select(cruise, cast_start, Instrument, Action, Station, Cast, 
+         dateTime8601, diff_mins) %>%
   arrange(cruise, cast_start, abs(diff_mins)) %>%
   print(n = Inf)
 
@@ -366,7 +373,7 @@ rm(elog_mwt_window, truly_unmatched)
 ## ------------------------------------------ ##
 ##  Manual exclusions & assignments         ----
 ## ------------------------------------------ ##
-## AR92 2025-08-18 11:30:24  = MWT Tow7; missing recover in elog
+## AR92 2025-08-18 11:30:24  = IKMWT Tow7; missing recover in elog
 ## AR99 2026-01-15 00:00:00  = bad
 ## EN727 2025-01-27 00:00:01 = bongo cast L7 B14
 ##   cast_start (00:00) is misleading; deploy was 04:43 UTC within file range
@@ -376,10 +383,10 @@ px_manual_mwt <- tibble(
 )
 
 px_manual_bongo <- tribble(
-  ~cruise,  ~cast_start,                                     ~station, ~cast,  ~elog_deploy,                                   ~elog_recover,
-  "EN727",  as.POSIXct("2025-01-27 00:00:01", tz = "UTC"), "L7",     "B14",  as.POSIXct("2025-01-27 04:43:44", tz = "UTC"), as.POSIXct("2025-01-27 05:00:52", tz = "UTC"),
-  "AR88",   as.POSIXct("2025-04-25 03:00:45", tz = "UTC"), "L4",     "B2",   as.POSIXct("2025-04-25 04:44:00", tz = "UTC"), as.POSIXct("2025-04-25 04:51:17", tz = "UTC"),
-  "EN727",  as.POSIXct("2025-01-26 02:16:17", tz = "UTC"), "L11",    "B6",   as.POSIXct("2025-01-26 05:01:30", tz = "UTC"), as.POSIXct("2025-01-26 05:29:41", tz = "UTC")
+  ~cruise, ~cast_start,                                 ~station, ~cast, ~elog_deploy,                                 ~elog_recover,
+  "EN727", as.POSIXct("2025-01-27 00:00:01", tz = "UTC"), "L7",   "B14", as.POSIXct("2025-01-27 04:43:44", tz = "UTC"), as.POSIXct("2025-01-27 05:00:52", tz = "UTC"),
+  "AR88",  as.POSIXct("2025-04-25 03:00:45", tz = "UTC"), "L4",   "B2",  as.POSIXct("2025-04-25 04:44:00", tz = "UTC"), as.POSIXct("2025-04-25 04:51:17", tz = "UTC"),
+  "EN727", as.POSIXct("2025-01-26 02:16:17", tz = "UTC"), "L11",  "B6",  as.POSIXct("2025-01-26 05:01:30", tz = "UTC"), as.POSIXct("2025-01-26 05:29:41", tz = "UTC")
 )
 
 ## build final bongo metadata: auto-matched + manual bongo
@@ -393,7 +400,8 @@ px_bongo_cast_meta_final <- bind_rows(
 ## ------------------------------------------ ##
 px_data_bongo <- px_data %>%
   ## drop AR99 bad file
-  filter(!(cruise == "AR99" & cast_start == as.POSIXct("2026-01-15 00:00:00", tz = "UTC"))) %>%
+  filter(!(cruise == "AR99" & cast_start == as.POSIXct("2026-01-15 00:00:00", 
+                                                       tz = "UTC"))) %>%
   ## keep only bongo cast_starts
   semi_join(px_bongo_cast_meta_final, by = c("cruise", "cast_start")) %>%
   ## add station/cast/elog times
@@ -503,6 +511,7 @@ rm(px_maxdepth)
 ## ------------------------------------------ ##
 ##  Trim to elog deploy/recover window      ----
 ## ------------------------------------------ ##
+# this is to remove extra surface data
 ## px sensor starts recording once in water so no predeploy trimming needed
 ## trim using elog times already in px_data_bongo
 ## small buffer to avoid clipping first/last real data points
@@ -699,10 +708,10 @@ px_cast_notes <- tribble(
   ## EN727 L9 B11:  px max 21m,  logsheet target ~200m
   ## AR99 L11 B9: No PX sensor data recorded; logsheet notes sensor did not record; logsheet max depth ~199m
   # --- manual time trims: deep noise at start ---
-  # EN727 L8 B10 px_trimmed_start",   "Deep noise before 19:30:05 UTC trimmed; real cast 19:30:05 to 19:44:27",
-  # EN727 L5 B19 px_trimmed_start",   "Deep noise before 20:35:09 UTC trimmed; real cast 20:35:09 to 20:43:53",
-  # # AR92
-  #     L1 B1 weird cast shape but max depth there 
+  # EN727 L8 B10 px_trimmed_start, Deep noise before 19:30:05 UTC trimmed; real cast 19:30:05 to 19:44:27",
+  # EN727 L5 B19 px_trimmed_start, Deep noise before 20:35:09 UTC trimmed; real cast 20:35:09 to 20:43:53",
+  # AR92  L1 B1 weird cast shape but max depth there 
+  
   # --- incomplete upcast ---
   "AR88",   "L10",    "B6",   "px_incomplete_upcast", "Upcast ends at ~150m; sensor stopped recording before recovery",
   "AR88",   "L11",    "B9",   "px_incomplete_upcast", "Upcast ends at ~75m; sensor stopped recording before recovery",
