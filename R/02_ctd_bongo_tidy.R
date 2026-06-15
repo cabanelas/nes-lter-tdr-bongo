@@ -4,11 +4,11 @@
 ##  Script:  02_ctd_bongo_tidy.R
 ##  Author:  Alexandra Cabanelas
 ##
-##  Purpose: Read raw SeaBird SBE19plus V2 CNV files from bongo-attached
-##           CTD deployments, assign cruise/station/cast metadata, tidy,
-##           label downcast/upcast, export cleaned CTD-bongo data
+##  Purpose: Read raw SeaBird SBE19plus V2 CNV files from bongo-attached CTD,
+##           assign cruise/station/cast metadata, tidy, label downcast/upcast,
+##           export cleaned CTD-bongo data
 ##
-##  Cruises: EN668 (2021), EN706 (2023)
+##  Cruises: EN668 (2021; no TDR) & EN706 (2023; also has TDR data)
 ##
 ##  Input:  data/raw/ctd_bongo/SBE19plus_EN668/*.cnv
 ##          data/raw/ctd_bongo/EN706_CTD_Data/raw/*.cnv
@@ -17,13 +17,13 @@
 ##
 ##  Output: data/processed/ctd_bongo_data_YYYY-MM-DD.rds
 ##          data/processed/ctd_bongo_data.csv
+##          data/processed/ctd-column-headers.csv
 ##          figures/ctd_bongo_profiles_raw_check.pdf
 ##          figures/ctd_bongo_profiles_labeled.pdf
 ##          figures/ctd_bongo_profiles_final.pdf
 ###############################################################
 
-# CTD data available for: EN668 (no TDR) and EN706 (also has TDR)
-# CTD sampling interval is uniformly 0.25 sec (4 Hz) across all casts and cruises
+# CTD sampling interval == 0.25 sec (4 Hz) across all casts and cruises
 # typo: EN668 L9 B14 has files labeled as B15. B14 is correct. fixed here
 
 ## ------------------------------------------ ##
@@ -101,16 +101,17 @@ read_ctd_bongo_cnv <- function(f) {
     mutate(cruise = cruise, station = station, cast = cast,
            file_start_time = start_time) %>%
     select(cruise, station, cast, file_start_time,
-           depth_m         = depsm, # depth in meters (derived from pressure)
-           temp_C          = tv290c, # temperature (C, ITS-90)
-           conductivity_sm = c0s_m, # conductivity (S/m)
-           density_kg_m3   = density00, # seawater density (kg/m^3)
-           descent_rate_ms = dz_dtm, # descent rate (m/s)
-           elapsed_s       = times, # elapsed seconds since start
+           depth_m         = depsm,    # depth in meters (derived from pressure)
+           temp_C          = tv290c,   # temperature (C, ITS-90)
+           conductivity_sm = c0s_m,    # conductivity (S/m)
+           density_kg_m3   = density00,# seawater density (kg/m^3)
+           descent_rate_ms = dz_dtm,   # descent rate (m/s)
+           elapsed_s       = times,    # elapsed seconds since start
            flag)
 }
 
-## read CNV files (exclude junk and deck tests)
+## --- read CNV files ---
+# exclude junk and deck tests
 cnv_files <- ctd_files[grepl("\\.cnv$", ctd_files, ignore.case = TRUE)] %>%
   .[!grepl("junk|jubk|Deck_Test|TEST\\.cnv|proc/|Copy", 
            ., ignore.case = TRUE)]
@@ -176,7 +177,7 @@ anti_join(meta, ctd_ids, by = c("cruise", "station", "cast_b" = "cast"))
 ctd_cnv_data <- ctd_cnv_data %>%
   mutate(station = str_replace(station, "^[Ll]0*(\\d+)$", "L\\1"),
          station = str_to_upper(station)) %>%
-  # en668L04B05.cnv has "L05" in header but is actually L4 — fix station
+  # en668L04B05.cnv has "L05" in header but is actually L4 -> fix station
   mutate(station = case_when(
     cruise == "EN668" & station == "L5" &
       file_start_time == as.POSIXct("2021-07-17 13:54:16", tz = "UTC") ~ "L4",
@@ -420,7 +421,7 @@ ctd_cast_notes <- tribble(
   ##               logsheet comments say ctd y tubing got disconned midcast
   "EN706",  "L11",   "B9",   "no_max_depth",   "Patched from B9_B downcast and B9_C upcast; CTD turned off mid-cast ~193 sec gap near max depth; no max depth available; logsheet notes Ytubing disconnected mid-cast",
   
-  # --- incomplete profiles: started mid-downcast ---
+  # --- incomplete profiles ---
   "EN706",  "L4",    "B5",   "no_max_depth",   "CTD started recording mid-upcast ~20 m; CNV filename had cast B04; corrected to B5 based on logsheet",
   "EN706",  "L5",    "B6",   "ctd_late_start", "CTD started recording mid-downcast ~40 m",
   "EN706",  "L10",   "B10",  "ctd_late_start", "CTD started recording mid-downcast ~40 m",
@@ -543,7 +544,7 @@ ctd_cnv_data %>%
   geom_jitter(width = 0.15, size = 0.5, alpha = 0.4, color = "grey30") +
   scale_x_discrete(labels = month.abb) +
   scale_fill_viridis_d(guide = "none") +
-  labs(title = "CTD near-surface temperature by month (depth < 5m, downcast)",
+  labs(title = "CTD near-surface temperature (depth < 5m, downcast)",
        x = NULL, y = "Temp (°C)") +
   theme_minimal()
 
@@ -559,7 +560,7 @@ ctd_cnv_data %>%
   geom_boxplot(fill = "steelblue", alpha = 0.4, outlier.shape = NA) +
   geom_jitter(aes(color = cruise), width = 0.2, size = 1.5, alpha = 0.8) +
   facet_wrap(~station) +
-  labs(title = "CTD near-bottom temperature by month (within 5m of max depth, downcast)",
+  labs(title = "CTD near-bottom temperature (within 5m of max depth, downcast)",
        x = "Month", y = "Temp (°C)", color = "Cruise") +
   theme_minimal()
 

@@ -7,16 +7,17 @@
 ##  SIMRAD PX MultiSensor 
 ##  Purpose: Read raw PX Multisensor (SR15) measurements CSV files,
 ##           assign cruise/station/cast metadata via elog,
-##           filter out Isaacs-Kidd Midwater Trawl (IKMT/MWT) deployments,
+##           filter out Isaacs-Kidd Midwater Trawl (IKMT/MWT) PX data,
 ##           trim to elog deploy/recover windows, label downcast/upcast,
 ##           and export cleaned bongo-only PX sensor data.
 ##
 ##  Input:   data/raw/px_sensor/{cruise}_px_sensor/*.csv
 ##           data/raw/elog_zoop_tows_thruAR99_2026-04-14.csv
 ##                    (from nes-lter-api-pulls.Rproj; 01_elog_pull.R)
-##          data/raw/all-nes-lter-bongologs-20260526.csv
+##           data/raw/all-nes-lter-bongologs-20260526.csv
 ##                  from nes-lter-tow-meta-v3.Rproj; 01_merge_bongo_logs.R
 ##           NES-LTER API2 (https://github.com/WHOIGit/nes-lter-api-2/wiki) for MWT elog
+##
 ##  Output:  data/processed/px_data_bongo_YYYY-MM-DD.rds
 ##           data/processed/px_data_bongo.csv
 ##           figures/px_sensor_profiles_check.pdf

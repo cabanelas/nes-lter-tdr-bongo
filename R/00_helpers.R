@@ -5,7 +5,6 @@
 ##  Author:  Alexandra Cabanelas
 ##
 ##  Purpose: Shared utility functions for TDR bongo data processing.
-##           Sourced by 02_tdr_tidy.R and downstream scripts.
 ##
 ##  Functions:
 ##    parse_filename_meta()  - parse cruise/station/cast from filename
@@ -17,7 +16,8 @@
 ##    detect_and_split()     - wrapper with message for auto_split_casts()
 ##    label_down_up()        - label predeploy / downcast / upcast rows
 ##    bin_by_depth()         - bin to 1-m depth intervals, average temp
-## +new ones
+##    extract_tdr_serial()   - extract TDR serial number
+##    safe_read_csv()        - for reading API2 data
 ###############################################################
 
 ## ------------------------------------------ ##
@@ -244,17 +244,6 @@ label_down_up <- function(df) {
 #' @param df  Data frame with depth_m, temp_C, down_up, date_time,
 #'            and grouping cols cruise / station / cast
 #' @return  One row per cruise x station x cast x down_up x depth_bin
-# bin_by_depth <- function(df) {
-#   df %>%
-#     mutate(depth_bin = floor(depth_m)) %>%
-#     group_by(cruise, station, cast, down_up, depth_bin) %>%
-#     summarise(
-#       avg_temp_C = mean(temp_C,     na.rm = TRUE),
-#       date_time  = median(date_time, na.rm = TRUE),
-#       n_obs      = n(),
-#       .groups    = "drop"
-#     )
-# }
 bin_by_depth <- function(df) {
   df %>%
     filter(down_up != "predeploy") %>%
@@ -273,7 +262,7 @@ bin_by_depth <- function(df) {
 }
 
 # --- Extract TDR serial number and lifetime cast counter from DAT file header
-# Returns NA for both fields if no Recorder line found (e.g. non-DAT cruises)
+# Returns NA for both fields if no DAT files found
 extract_tdr_serial <- function(dat_path) {
   header <- readLines(dat_path, n = 20, warn = FALSE)
   recorder_line <- grep("^##\\tRecorder", header, value = TRUE, useBytes = TRUE)
