@@ -8,7 +8,7 @@
 ##           For casts where TDR was attached to CTD (bench tests),
 ##           get CTD max depth from NES-LTER API and compare to TDR max depth 
 ##
-##  Input:  data/tdr_data_no_offset_DATE.RDS
+##  Input:  data/processed/tdr_data_no_offset_DATE.RDS
 ##          data/processed/tdr_ctd_tests.csv        (from 02_tdr_tidy.R)
 ##          data/raw/tdr_offsets.csv  
 ##          data/raw/all-nes-lter-bongologs-20260526.csv
@@ -662,6 +662,16 @@ offsets_draft %>%
          calculated_offset_m, manual_offset_m,
          offset_source, notes) %>%
   print(n = Inf)
+
+## ------------------------------------------ ##
+##  MANUAL CHECKS ---- HERE
+## ------------------------------------------ ##
+
+# 2025 = AR92 = use bench test val instead of px_tdr calculated 
+# AT46 L8 no tdr data delete from offsets_draft 
+# AT46 L1 maybe use surface val seems deeper than rest of cruise 
+# the rest seem good
+# wondering about EN644 L1, L2 and EN655 L1 
 
 ## ------------------------------------------ ##
 ##  TDR offsets comments in meta
