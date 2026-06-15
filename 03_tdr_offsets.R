@@ -474,7 +474,7 @@ offsets2_decisions <- tribble(
   "EN720",  2.9,      "all_casts",        "midpoint of bench offset (3.09) and implied offset (2.78); no PX data available"
 )
 
-## apply pass2 decisions to pass1 (for casts still missing offset)
+## apply offsets2 decisions to offsets1 (for casts still missing offset)
 offsets2 <- offsets1 %>%
   filter(is.na(calculated_offset_m), cruise %in% bench_cruises) %>%
   left_join(offsets2_decisions %>% select(cruise, offset_m, notes),
@@ -484,7 +484,6 @@ offsets2 <- offsets1 %>%
     offset_source       = "bench_test_cruise_wide"
   ) %>%
   select(-offset_m)
-# quizas deberia hacer que esto rbind con offsets1?
 
 ## ------------------------------------------ ##
 ##  Offsets3: Surface min depth
@@ -550,7 +549,6 @@ offsets3 <- offsets3_candidates %>%
   )
 
 ## ------------------------------------------ ##
-# includes the following cruises: 
 # 2018 = EN608   = 1.3m offset
 # 2018 = EN617   = 1m offset
 ##
@@ -588,7 +586,6 @@ offsets3 <- offsets3_candidates %>%
 # 2026 = AR99    = -5.6 to -6
 # 2026 = ***need to add HRS2601***
 
-
 ## ------------------------------------------ ##
 ##  Merge 
 ## ------------------------------------------ ##
@@ -612,7 +609,7 @@ offsets_draft <- bind_rows(
   offsets3,                                           # surface min depth
   offsets_clean                                       # clean surface, no ref
 ) %>%
-  ## add bench_offset_m as reference column (for flagging disagreements)
+  ## add bench_offset_m as reference column
   left_join(
     bench_test_offsets %>% select(cruise, bench_offset_m = depth_offset_m),
     by = "cruise"
@@ -630,7 +627,7 @@ offsets_draft <- bind_rows(
       TRUE                                                                ~ FALSE
     ),
     notes = case_when(
-      !is.na(notes) ~ notes,  # keep pass2/pass3 notes if present
+      !is.na(notes) ~ notes,  
       !is.na(manual_offset_m) & manual_offset_m != calculated_offset_m ~
         paste0("manual=", manual_offset_m,
                " vs calculated=", round(calculated_offset_m, 2)),
