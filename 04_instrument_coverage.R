@@ -4,22 +4,20 @@
 ##  Script:  04_instrument_coverage.R
 ##  Author:  Alexandra Cabanelas
 ##
-##  Purpose: Build a unified cast-level instrument availability
-##           table across TDR, CTD, and PX sensor data, and
+##  Purpose: Build a unified cast-level instrument availability table
+##           across TDR, CTD, and PX sensor data, and
 ##           produce a coverage heatmap and summary plots.
 ##
 ##  Input:   data/processed/tdr_data_no_offset.csv     (02_tdr_tidy.R)
 ##           data/processed/ctd_bongo_data.csv         (02_ctd_bongo_tidy.R)
 ##           data/processed/px_data_bongo.csv          (02_px_sensor_tidy.R)
-##           [PLACEHOLDER] data/raw/all-nes-lter-bongologs-YYYYMMDD.csv
-##                         or zp abundance package cast inventory
-##                         — used to define the full universe of bongo tows
-##                         so cruises/casts with no instrument data still appear
+##           data/raw/all-nes-lter-bongologs-20260526.csv
 ##
 ##  Output:  data/processed/nes_lter_bongo_instrument_coverage.csv
 ##           figures/instrument_coverage_heatmap.pdf
 ##           figures/instrument_coverage_summary.pdf
 ###############################################################
+
 # EN655 = L9B15 hit bottom = no sample = tdr cast but no sample
 # EN712  = L6B5 hit bottom = no sample = tdr cast but no sample
 # for the tdr data can use note code and note detail cols
@@ -62,7 +60,7 @@ px <- readRDS(px_file)
 ##  Full tow metadata    ----
 ## ------------------------------------------ ##
 ## Options:
-##   (a) all-nes-lter-bongologs CSV (what you already use in 02_tdr_tidy.R)
+##   (a) all-nes-lter-bongologs CSV
 ##   (b) the EDI zooplankton abundance package cast inventory
 ## one row per cruise/station/cast that actually had a bongo tow,
 ## regardless of whether instrument data exists
@@ -72,9 +70,10 @@ all_tows <- read_csv(here("data", "raw",
                           "all-nes-lter-bongologs-20260526.csv"), 
                      show_col_types = FALSE) %>%
   mutate(cast = paste0("B", cast)) %>%
-  distinct(cruise, station, cast) %>%
-  filter(!is.na(station), !is.na(cast)) %>%
-  filter(grepl("^[BR]", cast))  # bongo and ring net tows only
+  filter(!is.na(cast), !is.na(depth_TDR)) %>%
+  filter(!(cruise == "EN617" & station == "L11" & cast %in% c("B25A", "B25B"))) %>% 
+  distinct(cruise, station, cast) 
+  #filter(grepl("^[BR]", cast))  # bongo and ring net tows only
 
 ## ------------------------------------------ ##
 ##  Cast-level summary per instrument  ----
@@ -151,7 +150,8 @@ coverage <- coverage %>%
                                ctd_note_code, cruise, ctd_cruises),
     px_status  = assign_status(px_available,  px_has_downcast,  px_has_upcast,
                                px_note_code,  cruise, px_cruises)
-  )
+   )
+  # mutate(across(ends_with("_status"), ~ if_else(. == "na", "missing", .)))
 
 coverage %>%
   count(tdr_status) %>% print()
@@ -182,13 +182,13 @@ status_labels <- c(
   note       = "Flagged (late start / early end / patched)",
   incomplete = "Incomplete (missing downcast or upcast)",
   missing    = "No data",
-  na         = "Not deployed this cruise"
+  na         = "Station not sampled"
 )
 
 ## station order
 station_levels <- c(paste0("L", 1:11), "MVCO")
 
-## cruise order (chronological — update as needed)
+## cruise order (chronological)
 cruise_levels <- c(
   "EN608","EN617","EN627","EN644",
   "EN649","EN655","EN657","EN661","EN668",
@@ -202,7 +202,10 @@ cruise_levels <- c(
 ##  1. Heatmap (one panel per instrument)  ----
 ## ------------------------------------------ ##
 heatmap_df <- coverage %>%
-  filter(grepl("^B", cast)) %>%   # bongo tows only, not ring nets
+  filter(grepl("^B", cast)) %>%
+  filter(!is.na(cruise)) %>%
+  filter(station %in% station_levels) %>%
+  filter(cruise %in% cruise_levels) %>%
   select(cruise, station, cast, tdr_status, ctd_status, px_status) %>%
   pivot_longer(cols = ends_with("_status"),
                names_to  = "instrument",
@@ -211,9 +214,11 @@ heatmap_df <- coverage %>%
     instrument = str_remove(instrument, "_status") %>% str_to_upper(),
     instrument = factor(instrument, levels = c("TDR", "CTD", "PX")),
     station    = factor(station, levels = station_levels),
-    cruise     = factor(cruise,  levels = rev(cruise_levels)),  # reverse so earliest is top
+    cruise     = factor(cruise,  levels = rev(cruise_levels)),
     status     = factor(status,  levels = names(status_colors))
-  )
+  ) %>%
+  complete(cruise, station, instrument,
+           fill = list(status = factor("na", levels = names(status_colors))))
 
 pdf(here("figures", "instrument_coverage_heatmap.pdf"),
     width = 14, height = 8)
@@ -225,7 +230,7 @@ ggplot(heatmap_df, aes(x = station, y = cruise, fill = status)) +
                     name    = NULL,
                     na.value = "#F1EFE8") +
   facet_wrap(~instrument, ncol = 3) +
-  labs(title    = "NES-LTER Bongo: instrument data availability by cruise and station",
+  labs(title    = "NES-LTER Bongo",
        subtitle = "One cell per bongo tow; ring net tows excluded",
        x = NULL, y = NULL) +
   theme_minimal(base_size = 11) +
@@ -238,6 +243,13 @@ ggplot(heatmap_df, aes(x = station, y = cruise, fill = status)) +
     panel.grid       = element_blank()
   ) +
   guides(fill = guide_legend(nrow = 2, override.aes = list(color = "white")))
+
+coverage %>%
+  filter(grepl("^B", cast), station %in% station_levels, cruise %in% cruise_levels) %>%
+  count(cruise, station) %>%
+  filter(n > 1) %>%
+  arrange(cruise, station) %>%
+  print(n = Inf)
 
 dev.off()
 message("Saved: instrument_coverage_heatmap.pdf")
