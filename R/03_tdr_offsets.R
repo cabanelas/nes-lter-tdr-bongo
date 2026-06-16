@@ -806,8 +806,9 @@ tdr_serials_cruise <- tdr_data %>%
 offsets_final %>%
   distinct(cruise, offset_m) %>%
   left_join(tdr_serials_cruise, by = "cruise") %>%
-  mutate(cruise = factor(cruise, levels = cruise_years %>% 
-                           arrange(year) %>% pull(cruise))) %>%
+  left_join(tdr_data %>% group_by(cruise) %>% summarize(start_date = min(date_time)), 
+            by = "cruise") %>%
+  mutate(cruise = fct_reorder(cruise, start_date)) %>%
   ggplot(aes(x = cruise, y = offset_m, fill = tdr_serial)) +
   geom_col() +
   geom_hline(yintercept = 0, linetype = "dashed") +
