@@ -18,8 +18,8 @@ R/
 ├── 02_ctd_bongo_tidy.R       read, clean, label, and QC CTD CNV files
 ├── 02_px_sensor_tidy.R       read, clean, label, and QC PX sensor CSVs
 ├── 03_tdr_offsets.R          compute TDR-CTD depth offsets
-└── 04_instrument_coverage.R  [IN PROGRESS] coverage heatmap and summaries
-└── 04_bin.R                  [IN PROGRESS]
+└── 04_instrument_coverage.R  coverage heatmap and summaries
+└── 05_qaqc_check.R           quick final QA/QC check 
 data/
 ├── raw/
 │   ├── tdr_data/             raw TDR files per cruise (CSV/XLSX/DAT)
@@ -27,6 +27,7 @@ data/
 │   ├── px_sensor/            raw PX sensor CSVs and telemetry XMLs per cruise
 │   ├── all-nes-lter-bongologs-YYYYMMDD.csv   bongo logsheet metadata
 │   └── elog_zoop_tows_thruXXXX.csv           shipboard event log data for bongos
+│   └── nes-lter-zooplankton-tow-metadata-v2.csv    NEED TO ADD DATA PACK LINK
 └── processed/
 ```
 
@@ -46,9 +47,11 @@ Run in this order:
 
 4. **`02_px_sensor_tidy.R`** — cleans and processes Kongsberg PX sensor files; exports `px_data_bongo.csv`.
 
-5. **`03_tdr_offsets.R`** — [IN PROGRESS] fetches CTD cast profiles from the NES-LTER REST API and computes depth offsets between TDR and CTD max depths.
+5. **`03_tdr_offsets.R`** — computes depth offsets for TDR.
 
-6. **`04_instrument_coverage.R`** — [IN PROGRESS] data-instrument availability heatmap.
+6. **`04_instrument_coverage.R`** — data-instrument availability heatmap (optional).
+
+7. **`05_qaqc_check.R`** —
 
 Helper functions used across scripts are in `R/00_helpers.R`.
 
@@ -66,6 +69,8 @@ Recording interval: 1 second. Two TDR serial numbers used across the time series
 | No data found | EN661, EN695 |
 | TDR not deployed | AR63, AR38, AR32 |
 | CTD used instead | EN668 |
+
+TDR also not used priot to EN608 (the older OOI cruises maybe list here?)
 
 ### CTD ([SeaBird SBE19plus V2 SEACAT](https://vocab.nerc.ac.uk/collection/L22/current/TOOL0871/)), serial no. 8120
 

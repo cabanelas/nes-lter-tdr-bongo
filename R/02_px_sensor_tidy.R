@@ -991,6 +991,18 @@ px_data_bongo_final %>%
   summarise(stations = paste(sort(station), collapse = ", "), .groups = "drop")
 
 ## ------------------------------------------ ##
+##  Finalize col names and order  ----
+## ------------------------------------------ ##
+px_data_bongo_final <- px_data_bongo_final %>%
+  rename(file_start_time = cast_start,
+         sampling_interval_sec = px_sampling_interval_sec,
+         max_gap_sec = px_max_gap_sec,
+         n_obs = px_n_obs) %>%
+  select(cruise, station, cast, date_time, depth_m, temp_C, down_up, note_code, 
+         note_detail, file_start_time, sampling_interval_sec, max_gap_sec, 
+         n_obs)
+
+## ------------------------------------------ ##
 ##   Save output         ----
 ## ------------------------------------------ ##
 saveRDS(px_data_bongo_final,
@@ -1001,7 +1013,7 @@ write_csv(px_data_bongo_final,
           here("data", "processed", "px_data_bongo.csv"))
 
 tibble(column = names(px_data_bongo_final)) %>%
-  write_csv(here("data", "processed", "px_column_reference.csv"))
+  write_csv(here("data", "processed", "px-column-headers.csv"))
 
 ################################################################################
 # go to -----------> 03_tdr_offsets.R

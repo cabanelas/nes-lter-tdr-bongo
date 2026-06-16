@@ -795,10 +795,10 @@ offsets_final %>%
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 tdr_serials_cruise <- tdr_data %>%
-  count(cruise, tdr_serial) %>%
+  count(cruise, serial_number) %>%
   group_by(cruise) %>%
   slice_max(n, n = 1, with_ties = FALSE) %>%
-  select(cruise, tdr_serial)
+  select(cruise, serial_number)
 
 offsets_final %>%
   distinct(cruise, offset_m) %>%
@@ -806,7 +806,7 @@ offsets_final %>%
   left_join(tdr_data %>% group_by(cruise) %>% summarize(start_date = min(date_time)), 
             by = "cruise") %>%
   mutate(cruise = fct_reorder(cruise, start_date)) %>%
-  ggplot(aes(x = cruise, y = offset_m, fill = tdr_serial)) +
+  ggplot(aes(x = cruise, y = offset_m, fill = serial_number)) +
   geom_col() +
   geom_hline(yintercept = 0, linetype = "dashed") +
   labs(title = "TDR offset by cruise", 
@@ -835,7 +835,7 @@ raw_check <- offsets_final %>%
   arrange(cast_start)
 
 raw_check %>%
-  filter(tdr_serial == "11871") %>%
+  filter(serial_number == "11871") %>%
   ggplot(aes(x = cast_start, y = tdr_min_depth_m)) +
   geom_point(alpha = 0.6) +
   geom_smooth(method = "lm", se = TRUE) +
@@ -845,7 +845,7 @@ raw_check %>%
   theme_minimal()
 
 raw_check %>%
-  ggplot(aes(x = cast_start, y = tdr_min_depth_m, color = tdr_serial)) +
+  ggplot(aes(x = cast_start, y = tdr_min_depth_m, color = serial_number)) +
   geom_point(alpha = 0.6) +
   geom_smooth(method = "lm", se = TRUE, alpha = 0.15) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "gray40") +
@@ -853,6 +853,14 @@ raw_check %>%
        x = NULL, y = "min depth recorded (m)", 
        color = "TDR serial", fill = "TDR serial") +
   theme_minimal()
+
+## ------------------------------------------ ##
+##  Finalize col names and order  ----
+## ------------------------------------------ ##
+offsets_final <- offsets_final %>%
+  select(cruise, station, cast,
+         tdr_max_depth_m, px_max_depth_m, ctd_bongo_max_depth_m,
+         offset_m)
 
 ## ------------------------------------------ ##
 ##  Export offsets                   ----
