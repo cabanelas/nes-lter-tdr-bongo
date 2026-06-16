@@ -3,8 +3,6 @@
 .RData
 .Ruserdata
 
-raw/
-
 # Figures - ignore contents, keep folder via .gitkeep
 figures/*
 !figures/.gitkeep

@@ -828,6 +828,26 @@ offsets_final %>%
        x = "raw TDR min depth (m)", y = "corrected min depth (m)") +
   theme_minimal()
 
+cast_times <- tdr_data %>%
+  group_by(cruise, station, cast) %>%
+  summarize(cast_start = min(date_time), .groups = "drop")
+
+raw_check <- offsets_final %>%
+  left_join(tdr_serials_cruise, by = "cruise") %>%
+  left_join(cast_times, by = c("cruise", "station", "cast")) %>%
+  filter(tdr_serial == "11871") %>%
+  arrange(cast_start)
+
+raw_check %>%
+  ggplot(aes(x = cast_start, y = tdr_min_depth_m)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = TRUE) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray40") +
+  labs(title = "Raw TDR minimum recorded depth over time (serial 11871)",
+       subtitle = "untouched by offset selection — should sit near 0 if well-calibrated",
+       x = NULL, y = "min depth recorded (m)") +
+  theme_minimal()
+
 ## ------------------------------------------ ##
 ##  Export offsets                   ----
 ## ------------------------------------------ ##
