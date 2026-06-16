@@ -423,14 +423,14 @@ ctd_cast_notes <- tribble(
   
   # --- incomplete profiles ---
   "EN706",  "L4",    "B5",   "no_max_depth",   "CTD started recording mid-upcast ~20 m; CNV filename had cast B04; corrected to B5 based on logsheet",
-  "EN706",  "L5",    "B6",   "ctd_late_start", "CTD started recording mid-downcast ~40 m",
-  "EN706",  "L10",   "B10",  "ctd_late_start", "CTD started recording mid-downcast ~40 m",
-  "EN706",  "L7",    "B14",  "ctd_late_start", "CTD started recording mid-downcast ~25 m",
-  "EN706",  "L3",    "B20",  "ctd_late_start", "CTD started recording mid-downcast ~12 m",
-  "EN668",  "L1",    "B1",   "ctd_late_start", "CTD started recording mid-downcast ~8 m",
+  "EN706",  "L5",    "B6",   "late_start", "CTD started recording mid-downcast ~40 m",
+  "EN706",  "L10",   "B10",  "late_start", "CTD started recording mid-downcast ~40 m",
+  "EN706",  "L7",    "B14",  "late_start", "CTD started recording mid-downcast ~25 m",
+  "EN706",  "L3",    "B20",  "late_start", "CTD started recording mid-downcast ~12 m",
+  "EN668",  "L1",    "B1",   "late_start", "CTD started recording mid-downcast ~8 m",
   
   # --- incomplete profiles: stopped early ---
-  "EN706",  "L8",    "B15",  "ctd_early_end",  "CTD stopped recording on upcast immediately after max depth",
+  "EN706",  "L8",    "B15",  "early_end",  "CTD stopped recording on upcast immediately after max depth",
   
   # --- metadata fixes: original CNV header/filename errors ---
   "EN668",  "L4",    "B5",   "typo_corrected", "CNV header had station L05; corrected to L4 based on filename and logsheet",

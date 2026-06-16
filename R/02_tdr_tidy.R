@@ -1339,16 +1339,16 @@ rm(df, p, cr)
 ## ------------------------------------------ ##
 
 cast_notes <- tribble(
-  ~cruise,  ~station, ~cast, ~note_code,        ~note_detail,
-  "EN655",  "L9",     "B15", "hit_bottom",      "net hit bottom; no zooplankton sample; TDR cast only",
-  "EN712",  "L6",     "B5",  "hit_bottom",      "net hit bottom; no zooplankton sample; TDR cast only",
-  "AR99",   "L10",    "B6",  "tdr_late_start",  "TDR turned on after net in water; data starts at approx 37m on downcast",
-  "AR95",   "L3",     "B19", "tdr_late_start",  "TDR turned on after net in water; data starts at approx 19m on downcast",
-  "AE2426", "L9",     "B12", "upcast_only",     "no max depth; data starts at approx 85m on upcast",
-  "EN657",  "L1",     "B1",  "tdr_late_start",  "TDR turned on after net in water; data starts at approx 4m on downcast",
-  "EN655",  "L3",     "B3",  "tdr_late_start",  "TDR turned on after net in water; data starts at approx 10m on downcast",
-  "EN657",  "L4",     "B6",  "tdr_late_start",  "TDR turned on after net in water; data starts at approx 6m on downcast",
-  "EN627",  "L2",     "B7",  "tdr_early_end",   "TDR turned off before bongo out; data stopped at approx 4m on upcast"
+  ~cruise,  ~station, ~cast, ~note_code,      ~note_detail,
+  "EN655",  "L9",     "B15", "hit_bottom",    "net hit bottom; no zooplankton sample; TDR cast only",
+  "EN712",  "L6",     "B5",  "hit_bottom",    "net hit bottom; no zooplankton sample; TDR cast only",
+  "AR99",   "L10",    "B6",  "late_start",    "TDR turned on after net in water; data starts at approx 37m on downcast",
+  "AR95",   "L3",     "B19", "late_start",    "TDR turned on after net in water; data starts at approx 19m on downcast",
+  "AE2426", "L9",     "B12", "no_max_depth",  "upcast only; data starts at approx 85m on upcast",
+  "EN657",  "L1",     "B1",  "late_start",    "TDR turned on after net in water; data starts at approx 4m on downcast",
+  "EN655",  "L3",     "B3",  "late_start",    "TDR turned on after net in water; data starts at approx 10m on downcast",
+  "EN657",  "L4",     "B6",  "late_start",    "TDR turned on after net in water; data starts at approx 6m on downcast",
+  "EN627",  "L2",     "B7",  "early_end",     "TDR turned off before bongo out; data stopped at approx 4m on upcast"
 )
 
 # join notes into tdr_trim

@@ -766,15 +766,12 @@ print(missing_offsets, n = Inf)
 ## ------------------------------------------ ##
 ##  Visual QC: cruises with offset > 0      ----
 ## ------------------------------------------ ##
-cruises_nonzero <- offsets_final %>%
+offsets_final %>%
   group_by(cruise) %>%
   summarise(max_offset = max(abs(offset_m)), .groups = "drop") %>%
   filter(max_offset > 0) %>%
   arrange(desc(max_offset)) %>%
   pull(cruise)
-
-cat("\nCruises with offset > 0 (to visually check):\n")
-print(cruises_nonzero)
 
 offsets_final %>%
   mutate(corrected_max_depth_m = tdr_max_depth_m + offset_m) %>%
@@ -835,10 +832,10 @@ cast_times <- tdr_data %>%
 raw_check <- offsets_final %>%
   left_join(tdr_serials_cruise, by = "cruise") %>%
   left_join(cast_times, by = c("cruise", "station", "cast")) %>%
-  filter(tdr_serial == "11871") %>%
   arrange(cast_start)
 
 raw_check %>%
+  filter(tdr_serial == "11871") %>%
   ggplot(aes(x = cast_start, y = tdr_min_depth_m)) +
   geom_point(alpha = 0.6) +
   geom_smooth(method = "lm", se = TRUE) +
@@ -847,18 +844,12 @@ raw_check %>%
        x = NULL, y = "min depth recorded (m)") +
   theme_minimal()
 
-enough_data <- raw_check_all %>% 
-  count(tdr_serial) %>% 
-  filter(n >= 5) %>% 
-  pull(tdr_serial)
-
-raw_check_all %>%
+raw_check %>%
   ggplot(aes(x = cast_start, y = tdr_min_depth_m, color = tdr_serial)) +
   geom_point(alpha = 0.6) +
-  geom_smooth(data = raw_check_all %>% filter(tdr_serial %in% enough_data),
-              aes(fill = tdr_serial), method = "lm", se = TRUE, alpha = 0.15) +
+  geom_smooth(method = "lm", se = TRUE, alpha = 0.15) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "gray40") +
-  labs(title = "Raw TDR minimum recorded depth over time, by serial",
+  labs(title = "Raw TDR minimum recorded depth over time",
        x = NULL, y = "min depth recorded (m)", 
        color = "TDR serial", fill = "TDR serial") +
   theme_minimal()

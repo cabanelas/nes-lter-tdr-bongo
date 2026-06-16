@@ -20,10 +20,8 @@
 
 # EN655 = L9B15 hit bottom = no sample = tdr cast but no sample
 # EN712  = L6B5 hit bottom = no sample = tdr cast but no sample
-# for the tdr data can use note code and note detail cols
 
-## confirmed bad: sensor malfunction
-## cross-checked raw px_data max depth vs logsheet target depth
+## confirmed bad PX casts
 ## AR95 L6  B11:  px max 17m,  logsheet target 90m
 ## AR99 L2  B3:   px max 7m,   logsheet target 39m
 ## AR99 L9  B5:   px max 14m,  logsheet target 200m
@@ -70,10 +68,9 @@ all_tows <- read_csv(here("data", "raw",
                           "all-nes-lter-bongologs-20260526.csv"), 
                      show_col_types = FALSE) %>%
   mutate(cast = paste0("B", cast)) %>%
-  filter(!is.na(cast), !is.na(depth_TDR)) %>%
+  filter(!is.na(datetime_UTC_start)) %>%
   filter(!(cruise == "EN617" & station == "L11" & cast %in% c("B25A", "B25B"))) %>% 
-  distinct(cruise, station, cast) 
-  #filter(grepl("^[BR]", cast))  # bongo and ring net tows only
+  distinct(cruise, station, cast)
 
 ## ------------------------------------------ ##
 ##  Cast-level summary per instrument  ----
@@ -121,37 +118,33 @@ coverage %>%
 ##  Assign status codes per instrument  ----
 ## ------------------------------------------ ##
 ## status hierarchy:
-##   "good"       = data present, complete downcast + upcast
-##   "incomplete" = data present but missing downcast or upcast
-##   "note"       = data present but has a note_code flag
-##   "missing"    = no data recovered
-##   "na"         = instrument not deployed on this cruise
+##   good       = data present, complete downcast + upcast
+##   incomplete = data present but missing downcast or upcast
+##   note       = data present but has a note_code flag
+##   missing    = no data recovered
+##   na         = instrument not deployed on this cruise
 
 ## cruises where each instrument was deployed
 tdr_cruises <- unique(tdr$cruise)
 ctd_cruises <- unique(ctd$cruise)
 px_cruises  <- unique(px$cruise)
 
-assign_status <- function(available, has_down, has_up, note, cruise, deployed_cruises) {
+assign_status <- function(available, has_down, has_up, note) {
+  is_flagged_note <- !is.na(note) & note != "typo_corrected"
   case_when(
-    !cruise %in% deployed_cruises          ~ "na",
-    !available                             ~ "missing",
-    !is.na(note)                           ~ "note",
-    !has_down | !has_up                    ~ "incomplete",
-    TRUE                                   ~ "good"
+    !available          ~ "missing",
+    is_flagged_note     ~ "note",
+    !has_down | !has_up ~ "incomplete",
+    TRUE                ~ "good"
   )
 }
 
 coverage <- coverage %>%
   mutate(
-    tdr_status = assign_status(tdr_available, tdr_has_downcast, tdr_has_upcast,
-                               tdr_note_code, cruise, tdr_cruises),
-    ctd_status = assign_status(ctd_available, ctd_has_downcast, ctd_has_upcast,
-                               ctd_note_code, cruise, ctd_cruises),
-    px_status  = assign_status(px_available,  px_has_downcast,  px_has_upcast,
-                               px_note_code,  cruise, px_cruises)
-   )
-  # mutate(across(ends_with("_status"), ~ if_else(. == "na", "missing", .)))
+    tdr_status = assign_status(tdr_available, tdr_has_downcast, tdr_has_upcast, tdr_note_code),
+    ctd_status = assign_status(ctd_available, ctd_has_downcast, ctd_has_upcast, ctd_note_code),
+    px_status  = assign_status(px_available,  px_has_downcast,  px_has_upcast,  px_note_code)
+  )
 
 coverage %>%
   count(tdr_status) %>% print()
@@ -160,11 +153,14 @@ coverage %>%
 coverage %>%
   count(px_status)  %>% print()
 
-## ------------------------------------------ ##
-##  Export coverage table          ----
-## ------------------------------------------ ##
-# write_csv(coverage,
-#           here("data", "processed", "nes_lter_bongo_instrument_coverage.csv"))
+# stations that get sampled more than once within a cruise
+coverage %>%
+  group_by(cruise, station) %>%
+  filter(n() > 1) %>%
+  ungroup() %>%
+  arrange(cruise, station) %>%
+  select(cruise, station, cast, tdr_status, ctd_status, px_status) %>%
+  print(n = Inf)
 
 ## ------------------------------------------ ##
 ##  Heatmap helper setup            ----
@@ -186,7 +182,7 @@ status_labels <- c(
 )
 
 ## station order
-station_levels <- c(paste0("L", 1:11), "MVCO")
+station_levels <- c("MVCO", paste0("L", 1:11))
 
 ## cruise order (chronological)
 cruise_levels <- c(
@@ -220,9 +216,58 @@ heatmap_df <- coverage %>%
   complete(cruise, station, instrument,
            fill = list(status = factor("na", levels = names(status_colors))))
 
+# to add symbols on plot for special cases
+notes_df <- coverage %>%
+  filter(grepl("^B", cast), !is.na(cruise),
+         station %in% station_levels, cruise %in% cruise_levels) %>%
+  select(cruise, station, cast, tdr_note_code, ctd_note_code, px_note_code) %>%
+  pivot_longer(cols = ends_with("_note_code"),
+               names_to = "instrument", values_to = "note_code") %>%
+  mutate(
+    instrument = str_remove(instrument, "_note_code") %>% str_to_upper(),
+    instrument = factor(instrument, levels = c("TDR", "CTD", "PX")),
+    station    = factor(station, levels = station_levels),
+    cruise     = factor(cruise, levels = rev(cruise_levels))
+  ) %>%
+  filter(note_code %in% c("no_max_depth", "hit_bottom"))
+
 pdf(here("figures", "instrument_coverage_heatmap.pdf"),
     width = 14, height = 8)
 
+ggplot(heatmap_df, aes(x = station, y = cruise, fill = status)) +
+  geom_tile(color = "white", linewidth = 0.4) +
+  geom_point(data = notes_df,
+             aes(x = station, y = cruise, shape = note_code),
+             inherit.aes = FALSE, size = 2, color = "black") +
+  scale_shape_manual(
+    values = c(no_max_depth = 8, hit_bottom = 16),
+    labels = c(no_max_depth = "No max. depth recorded",
+               hit_bottom    = "No zooplankton sample"),
+    name = NULL
+  ) +
+  scale_fill_manual(values  = status_colors,
+                    labels  = status_labels,
+                    name    = NULL,
+                    na.value = "#F1EFE8") +
+  facet_wrap(~instrument, ncol = 3) +
+  labs(x = NULL, y = NULL) +
+  theme_minimal(base_size = 11) +
+  theme(
+    axis.text.x      = element_text(size = 9, angle = 45, hjust = 1, 
+                                    color = "black"),
+    axis.text.y      = element_text(size = 8, color = "black"),
+    strip.text       = element_text(size = 11, face = "bold"),
+    legend.position  = "bottom",
+    legend.text      = element_text(size = 9),
+    legend.box       = "vertical",
+    panel.grid       = element_blank()
+  ) +
+  guides(fill  = guide_legend(nrow = 2, override.aes = list(color = "white")),
+         shape = guide_legend(nrow = 1))
+
+dev.off()
+
+# simpler without symbols
 ggplot(heatmap_df, aes(x = station, y = cruise, fill = status)) +
   geom_tile(color = "white", linewidth = 0.4) +
   scale_fill_manual(values  = status_colors,
@@ -231,12 +276,12 @@ ggplot(heatmap_df, aes(x = station, y = cruise, fill = status)) +
                     na.value = "#F1EFE8") +
   facet_wrap(~instrument, ncol = 3) +
   labs(title    = "NES-LTER Bongo",
-       subtitle = "One cell per bongo tow; ring net tows excluded",
        x = NULL, y = NULL) +
   theme_minimal(base_size = 11) +
   theme(
-    axis.text.x      = element_text(size = 9, angle = 45, hjust = 1),
-    axis.text.y      = element_text(size = 8),
+    axis.text.x      = element_text(size = 9, angle = 45, hjust = 1, 
+                                    color = "black"),
+    axis.text.y      = element_text(size = 8, color = "black"),
     strip.text       = element_text(size = 11, face = "bold"),
     legend.position  = "bottom",
     legend.text      = element_text(size = 9),
@@ -244,21 +289,68 @@ ggplot(heatmap_df, aes(x = station, y = cruise, fill = status)) +
   ) +
   guides(fill = guide_legend(nrow = 2, override.aes = list(color = "white")))
 
-coverage %>%
-  filter(grepl("^B", cast), station %in% station_levels, cruise %in% cruise_levels) %>%
-  count(cruise, station) %>%
-  filter(n > 1) %>%
-  arrange(cruise, station) %>%
-  print(n = Inf)
+## ------------------------------------------ ##
+##  1b. Heatmap add years to y axis  ----
+## ------------------------------------------ ##
+## year lookup for faceting (order still comes from cruise_levels above)
+cruise_years <- read_csv(here("data", "raw", "all-nes-lter-bongologs-20260526.csv"),
+                         show_col_types = FALSE) %>%
+  filter(cruise %in% cruise_levels) %>%
+  group_by(cruise) %>%
+  summarize(year = year(min(datetime_UTC_start, na.rm = TRUE)), .groups = "drop")
 
-dev.off()
-message("Saved: instrument_coverage_heatmap.pdf")
+year_levels <- cruise_years$year[match(cruise_levels, cruise_years$cruise)] %>% unique()
+
+heatmap_df2 <- heatmap_df %>%
+  left_join(cruise_years, by = "cruise") %>%
+  mutate(year = factor(year, levels = year_levels))
+
+notes_df2 <- notes_df %>%
+  left_join(cruise_years, by = "cruise") %>%
+  mutate(year = factor(year, levels = year_levels))
+
+ggplot(heatmap_df2, aes(x = station, y = cruise, fill = status)) +
+  geom_tile(color = "white", linewidth = 0.4) +
+  geom_point(data = notes_df2,
+             aes(x = station, y = cruise, shape = note_code),
+             inherit.aes = FALSE, size = 2, color = "black") +
+  scale_shape_manual(
+    values = c(no_max_depth = 8, hit_bottom = 16),
+    labels = c(no_max_depth = "No max. depth recorded",
+               hit_bottom    = "No zooplankton sample)"),
+    name = NULL
+  ) +
+  scale_fill_manual(values  = status_colors,
+                    labels  = status_labels,
+                    name    = NULL,
+                    na.value = "#F1EFE8") +
+  facet_grid(rows = vars(year), cols = vars(instrument),
+             scales = "free_y", space = "free_y", switch = "y") +
+  labs(x = NULL, y = NULL) +
+  theme_minimal(base_size = 11) +
+  theme(
+    axis.text.x       = element_text(size = 9, angle = 45, hjust = 1, color = "black"),
+    axis.text.y       = element_text(size = 8, color = "black"),
+    strip.text.x      = element_text(size = 11, face = "bold"),
+    strip.text.y.left = element_text(size = 9, angle = 90),
+    strip.placement   = "outside",
+    strip.background.y = element_blank(),
+    legend.position   = "bottom",
+    legend.text       = element_text(size = 9),
+    legend.box        = "vertical",
+    panel.grid        = element_blank(),
+    panel.spacing.y   = unit(0, "pt"),
+    panel.border      = element_rect(color = "grey50", fill = NA, linewidth = 0.3)
+  ) +
+  guides(fill  = guide_legend(nrow = 2, override.aes = list(color = "white")),
+         shape = guide_legend(nrow = 1))
 
 ## ------------------------------------------ ##
 ##  2. Summary bar: tows per cruise      ----
 ## ------------------------------------------ ##
 summary_df <- coverage %>%
   filter(grepl("^B", cast)) %>%
+  filter(cruise %in% cruise_levels) %>%
   select(cruise, tdr_status, ctd_status, px_status) %>%
   pivot_longer(cols = ends_with("_status"),
                names_to  = "instrument",
@@ -281,8 +373,7 @@ ggplot(summary_df, aes(x = cruise, y = n, fill = status)) +
                     labels = status_labels,
                     name   = NULL) +
   facet_wrap(~instrument, ncol = 1, scales = "free_y") +
-  labs(title = "Cast counts by instrument and data status",
-       x = NULL, y = "Number of casts") +
+  labs(x = NULL, y = "Number of casts") +
   theme_minimal(base_size = 11) +
   theme(
     axis.text.x     = element_text(angle = 45, hjust = 1, size = 9),
@@ -294,7 +385,6 @@ ggplot(summary_df, aes(x = cruise, y = n, fill = status)) +
   guides(fill = guide_legend(nrow = 2))
 
 dev.off()
-message("Saved: instrument_coverage_summary.pdf")
 
 ## ------------------------------------------ ##
 ##  3. Quick console summary           ----
@@ -322,4 +412,12 @@ coverage %>%
   pivot_wider(names_from = px_status, values_from = n, values_fill = 0) %>%
   print(n = Inf)
 
-rm(tdr_sum, ctd_sum, px_sum, heatmap_df, summary_df)
+## ------------------------------------------ ##
+##  Export coverage table          ----
+## ------------------------------------------ ##
+write_csv(coverage,
+          here("data", "processed", "nes_lter_bongo_instrument_coverage.csv"))
+
+################################################################################
+# THE END
+################################################################################
