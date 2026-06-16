@@ -844,8 +844,23 @@ raw_check %>%
   geom_smooth(method = "lm", se = TRUE) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "gray40") +
   labs(title = "Raw TDR minimum recorded depth over time (serial 11871)",
-       subtitle = "untouched by offset selection — should sit near 0 if well-calibrated",
        x = NULL, y = "min depth recorded (m)") +
+  theme_minimal()
+
+enough_data <- raw_check_all %>% 
+  count(tdr_serial) %>% 
+  filter(n >= 5) %>% 
+  pull(tdr_serial)
+
+raw_check_all %>%
+  ggplot(aes(x = cast_start, y = tdr_min_depth_m, color = tdr_serial)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(data = raw_check_all %>% filter(tdr_serial %in% enough_data),
+              aes(fill = tdr_serial), method = "lm", se = TRUE, alpha = 0.15) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray40") +
+  labs(title = "Raw TDR minimum recorded depth over time, by serial",
+       x = NULL, y = "min depth recorded (m)", 
+       color = "TDR serial", fill = "TDR serial") +
   theme_minimal()
 
 ## ------------------------------------------ ##
@@ -862,5 +877,5 @@ tibble(column = names(offsets_final)) %>%
   write_csv(here("data", "processed", "tdr-offsets-column-headers.csv"))
 
 ################################################################################
-# go to -----------> 04.R
+# go to -----------> 04_instrument_coverage.R
 ################################################################################

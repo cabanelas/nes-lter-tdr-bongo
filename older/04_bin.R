@@ -1,6 +1,6 @@
 
 ## ------------------------------------------ ##
-##  10. Bin to 1-m depth intervals          ----
+##  Bin to 1-m depth intervals          ----
 ## ------------------------------------------ ##
 # average temp within each 1-m bin per cast x down_up
 # drop upcast rows shallower than 2 m (surface tail noise)
@@ -12,7 +12,7 @@ message("Depth bins range: ", min(tdr_binned$depth_bin), " – ",
         max(tdr_binned$depth_bin), " m")
 
 ## ------------------------------------------ ##
-##  10a. Binned profile plots               ----
+##  Binned profile plots               ----
 ## ------------------------------------------ ##
 
 pdf(here("figures", "binned_profiles_check.pdf"),
@@ -117,7 +117,7 @@ tdr_binned %>%
         strip.text  = element_text(size = 7))
 
 ## ------------------------------------------ ##
-##  12. Cast QC summary                    ----
+##  Cast QC summary                    ----
 ## ------------------------------------------ ##
 
 cast_qc <- tdr_binned %>%
