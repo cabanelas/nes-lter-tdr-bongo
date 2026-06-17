@@ -1,6 +1,6 @@
 # nes-lter-tdr-bongo
 
-R pipeline for processing temperature and depth profiles from instruments attached to Bongo net tows during *Northeast U.S. Shelf Long-Term Ecological Research (NES-LTER) Transect cruises*, ongoing since 2018.
+R pipeline for processing temperature and depth profiles from instruments attached to Bongo net tows during **Northeast U.S. Shelf Long-Term Ecological Research (NES-LTER) Transect cruises**, ongoing since 2018.
 
 Three instrument types are covered: 
 * Star-Oddi DST centi-TD temperature-depth recorder (TDR) deployed on most cruises since 2018
