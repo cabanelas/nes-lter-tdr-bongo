@@ -4,7 +4,7 @@ R pipeline for processing temperature and depth profiles from instruments attach
 
 Three instrument types are covered: a Star-Oddi DST centi-TD temperature-depth recorder (TDR) deployed on most cruises since 2018; a SeaBird SBE19plus V2 CTD mounted on the Bongo wire for EN668 (summer 2021) and EN706 (summer 2023); and a Kongsberg Simrad PX Universal depth/temperature sensor (SR15 receiver) deployed with the TDR starting with AE2426 (fall 2024).
 
-The processed outputs from this pipeline are published as a data package on the Environmental Data Initiative (EDI) repository. [PLACEHOLDER: DOI]
+The processed outputs from this pipeline are published as a data package on the Environmental Data Initiative (EDI) repository. [PLACEHOLDER: DOI] This is an ongoing data package: data currently span 2018-2026, and the package will be updated as additional NES-LTER transect cruises are completed.
 
 ---
 
@@ -27,7 +27,7 @@ data/
 │   ├── px_sensor/            raw PX sensor CSVs and telemetry XMLs per cruise
 │   ├── all-nes-lter-bongologs-YYYYMMDD.csv   bongo logsheet metadata
 │   └── elog_zoop_tows_thruXXXX.csv           shipboard event log data for bongos
-│   └── tdr_offsets.csv           old TDR offsets file with logsheet estimates of offsets
+│   └── tdr_offsets.csv           manually curated TDR offset notes (input to 03_tdr_offsets.R)
 └── processed/
 ```
 
@@ -136,7 +136,7 @@ The Kongsberg PX Universal D/T sensor is wirelessly deployed on the Bongo net fr
 R packages: `tidyverse`, `here`, `zoo`, `glue`, `lubridate`, `xml2`, `oce`, `conflicted`, `plotly`, `readxl`, `openxlsx`
 
 External data dependencies (not in this repo):
-- Bongo logsheet metadata: `all-nes-lter-bongologs-YYYYMMDD.csv` — compiled in `nes-lter-tow-meta-v3` repo. It is similar to the metadata 
+- Bongo logsheet metadata: `all-nes-lter-bongologs-YYYYMMDD.csv` — compiled in `nes-lter-tow-meta-v3` repo. Extends the published [NES-LTER zooplankton tow metadata package](https://doi.org/10.6073/pasta/8ff3d6baebd5e10cf59c527da0081e4b) with cruises completed after that package's last update, needed here for processing the more recent TDR cruises. 
 - Event log data: `elog_zoop_tows_thruXXXX.csv` — compiled in `nes-lter-api-pulls` repo
 - NES-LTER REST API2: used in `03_tdr_offsets.R` to fetch shipboard CTD profiles
 
