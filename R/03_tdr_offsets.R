@@ -320,7 +320,7 @@ walk(all_cruises, function(cr) {
     filter(cruise == cr) %>%
     left_join(tdr_depth_summary %>% select(cruise, station, cast, tdr_min_depth_m),
               by = c("cruise", "station", "cast")) %>%
-    ggplot(aes(x = date_time, y = depth_m)) +
+    ggplot(aes(x = date_time_utc, y = depth_m)) +
     geom_line(linewidth = 2) +
     geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
     scale_y_reverse(limits = c(25, -5)) +
@@ -413,7 +413,7 @@ walk(bench_cruises, function(cr) {
       tdr_data %>%
         filter(cruise == cr) %>% #, down_up == "downcast"
         group_by(cruise, station, cast) %>%
-        summarise(label_time = min(date_time), .groups = "drop"),
+        summarise(label_time = min(date_time_utc), .groups = "drop"),
       by = c("cruise", "station", "cast")
     )
   
@@ -421,7 +421,7 @@ walk(bench_cruises, function(cr) {
     filter(cruise == cr) %>%
     left_join(tdr_depth_summary, by = c("cruise", "station", "cast")) %>%
     #filter(down_up == "downcast") %>%
-    ggplot(aes(x = date_time, y = depth_m)) +
+    ggplot(aes(x = date_time_utc, y = depth_m)) +
     geom_line(linewidth = 0.3) +
     geom_text(
       data = label_df, aes(x = label_time, y = tdr_min_depth_m,
@@ -526,7 +526,7 @@ walk(unique(offsets3_candidates$cruise), function(cr) {
       tdr_data %>%
         filter(cruise == cr, down_up == "downcast") %>%
         group_by(cruise, station, cast) %>%
-        summarise(label_time = min(date_time), .groups = "drop"),
+        summarise(label_time = min(date_time_utc), .groups = "drop"),
       by = c("cruise", "station", "cast")
     )
   
@@ -535,7 +535,7 @@ walk(unique(offsets3_candidates$cruise), function(cr) {
            paste(station, cast) %in% 
              paste(candidates_cr$station, candidates_cr$cast),
            down_up == "downcast") %>%
-    ggplot(aes(x = date_time, y = depth_m)) +
+    ggplot(aes(x = date_time_utc, y = depth_m)) +
     geom_line(linewidth = 1.3) +
     geom_text(
       data = label_df,
@@ -805,14 +805,14 @@ tdr_serials_cruise <- tdr_data %>%
 offsets_final %>%
   distinct(cruise, offset_m) %>%
   left_join(tdr_serials_cruise, by = "cruise") %>%
-  left_join(tdr_data %>% group_by(cruise) %>% summarize(start_date = min(date_time)), 
+  left_join(tdr_data %>% group_by(cruise) %>% 
+              summarize(start_date = min(date_time_utc)), 
             by = "cruise") %>%
   mutate(cruise = fct_reorder(cruise, start_date)) %>%
   ggplot(aes(x = cruise, y = offset_m, fill = serial_number)) +
   geom_col() +
   geom_hline(yintercept = 0, linetype = "dashed") +
   labs(title = "TDR offset by cruise", 
-       subtitle = "color = TDR serial number",
        x = NULL, y = "offset (m)", fill = "TDR serial") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
@@ -829,7 +829,7 @@ offsets_final %>%
 
 cast_times <- tdr_data %>%
   group_by(cruise, station, cast) %>%
-  summarize(cast_start = min(date_time), .groups = "drop")
+  summarize(cast_start = min(date_time_utc), .groups = "drop")
 
 raw_check <- offsets_final %>%
   left_join(tdr_serials_cruise, by = "cruise") %>%

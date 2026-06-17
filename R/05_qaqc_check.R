@@ -22,7 +22,7 @@ offsets_final <- read_csv(here("data", "processed", "nes-lter-bongo-tdr-offsets.
 tables <- list(tdr = tdr_data, ctd = ctd_bongo_data, px = px_data_bongo_final)
 
 ## 1. shared columns: types should match across all three
-shared_cols <- c("cruise", "station", "cast", "date_time", "depth_m", "temp_C", "down_up", "note_code")
+shared_cols <- c("cruise", "station", "cast", "date_time_utc", "depth_m", "temp_C", "down_up", "note_code")
 
 cat("\n== shared column types ==\n")
 tables %>%
@@ -49,7 +49,7 @@ tables %>% imap_dfr(~ tibble(table = .y,
 
 ## 5. date_time timezone
 cat("\n== date_time timezone ==\n")
-tables %>% imap_dfr(~ tibble(table = .y, tz = attr(.x$date_time, "tzone"))) %>% print()
+tables %>% imap_dfr(~ tibble(table = .y, tz = attr(.x$date_time_utc, "tzone"))) %>% print()
 
 ## 6. offsets_final — structure + completeness
 cat("\n== offsets_final columns ==\n")
