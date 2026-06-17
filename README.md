@@ -7,7 +7,9 @@ Three instrument types are covered:
 * SeaBird SBE19plus V2 CTD mounted on the Bongo wire for EN668 (summer 2021) and EN706 (summer 2023)
 * Kongsberg Simrad PX Universal depth/temperature sensor (SR15 receiver) deployed with the TDR starting with AE2426 (fall 2024)
 
-The processed outputs from this pipeline are published as a data package on the Environmental Data Initiative (EDI) repository. [PLACEHOLDER: DOI] This is an ongoing data package: data currently span 2018-2026, and the package will be updated as additional NES-LTER transect cruises are completed.
+The processed outputs from this pipeline are published as a data package on the Environmental Data Initiative (EDI) repository. [PLACEHOLDER: DOI] 
+
+This is an ongoing data package: data currently span 2018-2026, and the package will be updated as additional NES-LTER transect cruises are completed.
 
 ---
 
@@ -30,7 +32,7 @@ data/
 │   ├── px_sensor/            raw PX sensor CSVs and telemetry XMLs per cruise
 │   ├── all-nes-lter-bongologs-YYYYMMDD.csv   bongo logsheet metadata
 │   └── elog_zoop_tows_thruXXXX.csv           shipboard event log data for bongos
-│   └── tdr_offsets.csv           manually curated TDR offset notes (input to 03_tdr_offsets.R)
+│   └── tdr_offsets.csv       manually curated TDR offset notes (input to 03_tdr_offsets.R)
 └── processed/
 ```
 
@@ -42,7 +44,7 @@ data/
 
 Run in this order:
 
-1. **`01_tdr_dat_to_csv.R`** — converts `.DAT` files (EN608, EN627, EN644) and `.xlsx` files to `.csv` so they can be read by the main pipeline.
+1. **`01_tdr_dat_to_csv.R`** — converts `.DAT` files and `.xlsx` files to `.csv` so they can be read by the main pipeline.
 
 2. **`02_tdr_tidy.R`** — main TDR pipeline. cleans and processes all TDR data; exports `nes-lter-bongo-tdr.csv`.
 
@@ -50,7 +52,7 @@ Run in this order:
 
 4. **`02_px_sensor_tidy.R`** — cleans and processes Kongsberg PX sensor files; exports `nes-lter-bongo-px.csv`.
 
-5. **`03_tdr_offsets.R`** — computes depth offsets for TDR; exports .
+5. **`03_tdr_offsets.R`** — computes depth offsets for TDR; exports `nes-lter-bongo-tdr-offsets.csv`.
 
 6. **`04_instrument_coverage.R`** — data-instrument availability heatmap (optional).
 
@@ -69,8 +71,7 @@ Recording interval: nominally 1 second (actual interval per deployment is in the
 | Status | Cruises |
 |--------|---------|
 | Data available | EN608, EN617, EN627, EN644, EN649, EN655, EN657, AT46, EN687, HRS2303, EN706, AR77, EN712, EN715, EN720, AE2426, EN727, AR88, AR92, AR95, AR99 |
-| No TDR data found | EN661, EN695 |
-| TDR not deployed | AR63, AR38, AR32 |
+| No TDR data | EN661, EN695, AR32, AR38, AR63 |
 | CTD used instead | EN668 |
 
 Prior to EN608, the first dedicated NES-LTER transect cruise, zooplankton sampling consisted of vertical ring net tows (AR28B, AR31A, AR34B, AR39B, AR61B, AR66B) conducted in collaboration with OOI. No Bongo tows or TDR data exist for these cruises, zooplankton samples from the ring net tows are available.
@@ -81,7 +82,7 @@ Recording interval: 4 Hz (0.25 seconds). Available for EN668 (no TDR) and EN706 
 
 ### PX sensor ([Kongsberg Simrad PX Universal](https://vocab.nerc.ac.uk/collection/L22/current/TOOL1797/)), serial no. 274571
 
-Recording interval: 2 seconds (most cruises); 4 seconds (AR99). Deployed with TDR starting cruise AE2426 (2024).
+Recording interval: 2 seconds (most cruises); 4 seconds (AR99). Deployed with TDR starting in fall 2024 (cruise AE2426).
 
 | Cruises with PX data |
 |----------------------|
@@ -132,6 +133,8 @@ Four processed CSV files are the primary outputs submitted to EDI:
 
 The Kongsberg PX Universal D/T sensor is wirelessly deployed on the Bongo net frame. Data are received by the SR15 unit aboard the vessel and logged as semicolon-delimited CSV files with a paired telemetry XML. Files are named by timestamp (YYYYMMDD_HHMMSS_measurements.csv). One file is created per cast.
 
+> More detailed methods available in the published EDI package metadata. 
+
 ---
 
 ## Dependencies
@@ -161,4 +164,4 @@ External data dependencies (not in this repo):
 
 ## Contact
 
-Alexandra C. Cabanelas — MIT-WHOI Joint Program  
+Alexandra C. Cabanelas Bermudez — MIT-WHOI Joint Program  
