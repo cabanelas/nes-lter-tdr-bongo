@@ -146,6 +146,8 @@ External data dependencies (not in this repo):
 - Event log data: `elog_zoop_tows_thruXXXX.csv` — compiled in `nes-lter-api-pulls` repo
 - NES-LTER REST API2: used in `03_tdr_offsets.R` to fetch shipboard CTD profiles
 
+Session info (R version and exact package versions used to generate the published outputs) is recorded in [`session_info.txt`](session_info.txt).
+
 ---
 
 ## Related packages and repositories

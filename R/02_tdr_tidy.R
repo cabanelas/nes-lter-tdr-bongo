@@ -66,9 +66,6 @@ library(zoo)      # for rollmean in auto_split_casts
 library(glue)     # for glue() in detect_and_split plots
 library(conflicted)
 
-## Run sessionInfo() and save output to document package versions
-## > writeLines(capture.output(sessionInfo()), "session_info.txt")
-
 source(here("R", "00_helpers.R"))
 
 conflicts_prefer(dplyr::filter)
