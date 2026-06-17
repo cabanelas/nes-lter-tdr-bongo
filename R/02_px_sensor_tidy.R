@@ -994,11 +994,12 @@ px_data_bongo_final %>%
 ##  Finalize col names and order  ----
 ## ------------------------------------------ ##
 px_data_bongo_final <- px_data_bongo_final %>%
-  rename(file_start_time = cast_start,
+  rename(date_time_utc = date_time,
+         file_start_time = cast_start,
          sampling_interval_sec = px_sampling_interval_sec,
          max_gap_sec = px_max_gap_sec,
          n_obs = px_n_obs) %>%
-  select(cruise, station, cast, date_time, depth_m, temp_C, down_up, note_code, 
+  select(cruise, station, cast, date_time_utc, depth_m, temp_C, down_up, note_code, 
          note_detail, file_start_time, sampling_interval_sec, max_gap_sec, 
          n_obs)
 

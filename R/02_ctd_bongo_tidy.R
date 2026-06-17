@@ -674,9 +674,10 @@ ctd_cnv_data <- ctd_cnv_data %>%
 ##  Finalize col names and order  ----
 ## ------------------------------------------ ##
 ctd_cnv_data <- ctd_cnv_data %>%
-  rename(conductivity_S_m = conductivity_sm,
+  rename(date_time_utc = date_time,
+         conductivity_S_m = conductivity_sm,
          descent_rate_m_s = descent_rate_ms) %>%
-  select(cruise, station, cast, date_time, depth_m, temp_C, down_up, note_code, 
+  select(cruise, station, cast, date_time_utc, depth_m, temp_C, down_up, note_code, 
          note_detail, file_start_time, conductivity_S_m, density_kg_m3, 
          descent_rate_m_s, elapsed_s)
 

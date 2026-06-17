@@ -96,9 +96,9 @@ Four processed CSV files are the primary outputs submitted to EDI:
 
 | File | Instrument | Columns |
 |------|-----------|---------|
-| `nes-lter-bongo-tdr.csv` | TDR | cruise, station, cast, date_time, depth_m, temp_C, down_up, note_code, note_detail, serial_number, lifetime_cast, seastar_version, sampling_interval_sec, max_gap_sec, n_obs |
-| `nes-lter-bongo-ctd.csv` | CTD | cruise, station, cast, date_time, depth_m, temp_C, down_up, note_code, note_detail, file_start_time, conductivity_S_m, density_kg_m3, descent_rate_m_s, elapsed_s |
-| `nes-lter-bongo-px.csv` | PX sensor | cruise, station, cast, date_time, depth_m, temp_C, down_up, note_code, note_detail, file_start_time, sampling_interval_sec, max_gap_sec, n_obs |
+| `nes-lter-bongo-tdr.csv` | TDR | cruise, station, cast, date_time_utc, depth_m, temp_C, down_up, note_code, note_detail, serial_number, lifetime_cast, seastar_version, sampling_interval_sec, max_gap_sec, n_obs |
+| `nes-lter-bongo-ctd.csv` | CTD | cruise, station, cast, date_time_utc, depth_m, temp_C, down_up, note_code, note_detail, file_start_time, conductivity_S_m, density_kg_m3, descent_rate_m_s, elapsed_s |
+| `nes-lter-bongo-px.csv` | PX sensor | cruise, station, cast, date_time_utc, depth_m, temp_C, down_up, note_code, note_detail, file_start_time, sampling_interval_sec, max_gap_sec, n_obs |
 | `nes-lter-bongo-tdr-offsets.csv` | TDR offsets | cruise, station, cast, tdr_max_depth_m, px_max_depth_m, ctd_bongo_max_depth_m, offset_m |
 
 ---

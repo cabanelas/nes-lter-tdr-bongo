@@ -1724,12 +1724,13 @@ rm(known_upcast_only, cast_coverage)
 ##  Finalize col names and order  ----
 ## ------------------------------------------ ##
 tdr_data <- tdr_data %>%
-  rename(serial_number = tdr_serial, 
+  rename(date_time_utc = date_time,
+         serial_number = tdr_serial, 
          lifetime_cast = tdr_lifetime_cast,
          sampling_interval_sec = tdr_sampling_interval_sec,
          max_gap_sec = tdr_max_gap_sec,
          n_obs = tdr_n_obs) %>% 
-  select(cruise, station, cast, date_time, depth_m, temp_C, down_up, note_code, 
+  select(cruise, station, cast, date_time_utc, depth_m, temp_C, down_up, note_code, 
          note_detail, serial_number, lifetime_cast, seastar_version,
          sampling_interval_sec, max_gap_sec, n_obs)
 
