@@ -10,7 +10,7 @@ figures/*
 # Data/raw - ignore contents, keep folder, but track these two files
 data/raw/*
 !data/raw/.gitkeep
-!data/raw/nes-lter-zooplankton-tow-metadata-v2.csv
+!data/raw/tdr_offsets.csv
 !data/raw/all-nes-lter-bongologs-20260526.csv
 !data/raw/elog_zoop_tows_thruAR99_2026-04-14.csv
 
