@@ -1,8 +1,11 @@
 # nes-lter-tdr-bongo
 
-R pipeline for processing temperature and depth profiles from instruments attached to Bongo net tows during Northeast U.S. Shelf Long-Term Ecological Research (NES-LTER) Transect cruises, ongoing since 2018.
+R pipeline for processing temperature and depth profiles from instruments attached to Bongo net tows during *Northeast U.S. Shelf Long-Term Ecological Research (NES-LTER) Transect cruises*, ongoing since 2018.
 
-Three instrument types are covered: a Star-Oddi DST centi-TD temperature-depth recorder (TDR) deployed on most cruises since 2018; a SeaBird SBE19plus V2 CTD mounted on the Bongo wire for EN668 (summer 2021) and EN706 (summer 2023); and a Kongsberg Simrad PX Universal depth/temperature sensor (SR15 receiver) deployed with the TDR starting with AE2426 (fall 2024).
+Three instrument types are covered: 
+* Star-Oddi DST centi-TD temperature-depth recorder (TDR) deployed on most cruises since 2018
+* SeaBird SBE19plus V2 CTD mounted on the Bongo wire for EN668 (summer 2021) and EN706 (summer 2023)
+* Kongsberg Simrad PX Universal depth/temperature sensor (SR15 receiver) deployed with the TDR starting with AE2426 (fall 2024)
 
 The processed outputs from this pipeline are published as a data package on the Environmental Data Initiative (EDI) repository. [PLACEHOLDER: DOI] This is an ongoing data package: data currently span 2018-2026, and the package will be updated as additional NES-LTER transect cruises are completed.
 
