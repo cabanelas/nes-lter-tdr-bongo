@@ -17,14 +17,15 @@
 ##          data/raw/all-nes-lter-bongologs-20260526.csv
 ##                  from nes-lter-tow-meta-v3.Rproj; 01_merge_bongo_logs.R
 ##                          
-##  Output: NOT EXPORTED**** data/processed/<CRUISE>_tdr_processed.csv  (per cruise)
-##          data/processed/tdr_data_no_offset_Sys.Date.rds (all cruises)
-##          data/processed/tdr_data_no_offset.csv          (all cruises)
-##          data/processed/tdr_ctd_tests.csv               (for 03_tdr_offsets.R)
+##  Output: data/processed/tdr_data_no_offset_Sys.Date.rds (all cruises)
+##          data/processed/nes-lter-bongo-tdr.csv         (all cruises)
+##          data/processed/tdr_ctd_tests.csv              (for 03_tdr_offsets.R)
+##          data/processed/tdr-column-headers.csv
 ##          figures/tdr_profiles_raw_check.pdf
 ##          figures/tdr_profiles_labeled_8a.pdf
 ##          figures/tdr_profiles_trimmed_9c.pdf
 ##          figures/tdr_profiles_final_11.pdf
+## NOT EXPORTED**** data/processed/<CRUISE>_tdr_processed.csv  (per cruise)
 ###############################################################
 
 ## ------------------------------------------ ##
@@ -1744,7 +1745,7 @@ if (!dir.exists(OUT_DIR)) dir.create(OUT_DIR, recursive = TRUE)
 saveRDS(tdr_data, here("data", "processed", 
                        paste0("tdr_data_no_offset_", Sys.Date(), ".rds")))
 
-write_csv(tdr_data, here(OUT_DIR, "tdr_data_no_offset.csv"))
+write_csv(tdr_data, here(OUT_DIR, "nes-lter-bongo-tdr.csv"))
 
 # save file with colnames
 tibble(column = names(tdr_data)) %>%

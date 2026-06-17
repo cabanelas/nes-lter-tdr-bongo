@@ -16,7 +16,7 @@
 ##                  from nes-lter-tow-meta-v3.Rproj; 01_merge_bongo_logs.R
 ##
 ##  Output: data/processed/ctd_bongo_data_YYYY-MM-DD.rds
-##          data/processed/ctd_bongo_data.csv
+##          data/processed/nes-lter-bongo-ctd.csv
 ##          data/processed/ctd-column-headers.csv
 ##          figures/ctd_bongo_profiles_raw_check.pdf
 ##          figures/ctd_bongo_profiles_labeled.pdf
@@ -688,7 +688,7 @@ saveRDS(ctd_cnv_data,
              paste0("ctd_bongo_data_", Sys.Date(), ".rds")))
 
 write_csv(ctd_cnv_data,
-          here("data", "processed", "ctd_bongo_data.csv"))
+          here("data", "processed", "nes-lter-bongo-ctd.csv"))
 
 tibble(column = names(ctd_cnv_data)) %>%
   write_csv(here("data", "processed", "ctd-column-headers.csv"))

@@ -20,6 +20,8 @@
 ##    https://nes-lter-api.whoi.edu/api/docs#/
 ##
 ##  Output: data/processed/tdr_offsets_Sys.Date.csv
+##          data/processed/nes-lter-bongo-tdr-offsets.csv
+##          data/processed/tdr-offsets-column-headers.csv
 ###############################################################
 
 ## cruises with CTD-TDR tests: 
@@ -870,6 +872,7 @@ out_file <- here("data", "processed",
                  paste0("tdr_offsets_", Sys.Date(), ".csv"))
 write_csv(offsets_final, out_file)
 basename(out_file)
+write_csv(offsets_final, here("data", "processed", "nes-lter-bongo-tdr-offsets.csv"))
 
 # save file with colnames
 tibble(column = names(offsets_final)) %>%

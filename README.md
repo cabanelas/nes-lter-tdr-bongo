@@ -17,9 +17,9 @@ R/
 ├── 02_tdr_tidy.R             read, clean, label, and QC all TDR data
 ├── 02_ctd_bongo_tidy.R       read, clean, label, and QC CTD CNV files
 ├── 02_px_sensor_tidy.R       read, clean, label, and QC PX sensor CSVs
-├── 03_tdr_offsets.R          compute TDR-CTD depth offsets
+├── 03_tdr_offsets.R          compute TDR depth offsets
 └── 04_instrument_coverage.R  coverage heatmap and summaries
-└── 05_qaqc_check.R           quick final QA/QC check 
+└── 05_qaqc_check.R           final structural QA/QC 
 data/
 ├── raw/
 │   ├── tdr_data/             raw TDR files per cruise (CSV/XLSX/DAT)
@@ -27,11 +27,11 @@ data/
 │   ├── px_sensor/            raw PX sensor CSVs and telemetry XMLs per cruise
 │   ├── all-nes-lter-bongologs-YYYYMMDD.csv   bongo logsheet metadata
 │   └── elog_zoop_tows_thruXXXX.csv           shipboard event log data for bongos
-│   └── nes-lter-zooplankton-tow-metadata-v2.csv    NEED TO ADD DATA PACK LINK
+│   └── tdr_offsets.csv           old TDR offsets file with logsheet estimates of offsets
 └── processed/
 ```
 
-> **Note:** Raw data files and figures are not pushed to GitHub. The `data/processed/` outputs are the files submitted to EDI. See the EDI data package for the published versions.
+> **Note:** Raw instrument data files and saved figures are not pushed to GitHub. The `data/processed/` outputs are the files submitted to EDI. See the EDI data package for the published versions. 
 
 ---
 
@@ -39,19 +39,19 @@ data/
 
 Run in this order:
 
-1. **`01_tdr_dat_to_csv.R`** — converts legacy `.DAT` files (EN608, EN627, EN644) and `.xlsx` files to CSV so they can be read by the main pipeline.
+1. **`01_tdr_dat_to_csv.R`** — converts `.DAT` files (EN608, EN627, EN644) and `.xlsx` files to `.csv` so they can be read by the main pipeline.
 
-2. **`02_tdr_tidy.R`** — main TDR pipeline. cleans and processes all TDR cruise files; exports `tdr_data_no_offset.csv`.
+2. **`02_tdr_tidy.R`** — main TDR pipeline. cleans and processes all TDR data; exports `nes-lter-bongo-tdr.csv`.
 
-3. **`02_ctd_bongo_tidy.R`** — cleans and processes SeaBird CTD CNV files (EN668, EN706); exports `ctd_bongo_data.csv`.
+3. **`02_ctd_bongo_tidy.R`** — cleans and processes SeaBird CTD CNV files (EN668, EN706); exports `nes-lter-bongo-ctd.csv`.
 
-4. **`02_px_sensor_tidy.R`** — cleans and processes Kongsberg PX sensor files; exports `px_data_bongo.csv`.
+4. **`02_px_sensor_tidy.R`** — cleans and processes Kongsberg PX sensor files; exports `nes-lter-bongo-px.csv`.
 
-5. **`03_tdr_offsets.R`** — computes depth offsets for TDR.
+5. **`03_tdr_offsets.R`** — computes depth offsets for TDR; exports .
 
 6. **`04_instrument_coverage.R`** — data-instrument availability heatmap (optional).
 
-7. **`05_qaqc_check.R`** —
+7. **`05_qaqc_check.R`** — final QA/QC 
 
 Helper functions used across scripts are in `R/00_helpers.R`.
 
@@ -61,16 +61,16 @@ Helper functions used across scripts are in `R/00_helpers.R`.
 
 ### TDR ([Star-Oddi DST centi-TD](https://vocab.nerc.ac.uk/collection/L22/current/TOOL0383/))
 
-Recording interval: 1 second. Two TDR serial numbers used across the time series (9447 and 11871).
+Recording interval: nominally 1 second (actual interval per deployment is in the `sampling_interval_sec` column). Three TDR serial numbers used across the time series: 9447 (2018–2023), 9446 (EN644, EN687), and 11871 (2023–2026).
 
 | Status | Cruises |
 |--------|---------|
 | Data available | EN608, EN617, EN627, EN644, EN649, EN655, EN657, AT46, EN687, HRS2303, EN706, AR77, EN712, EN715, EN720, AE2426, EN727, AR88, AR92, AR95, AR99 |
-| No data found | EN661, EN695 |
+| No TDR data found | EN661, EN695 |
 | TDR not deployed | AR63, AR38, AR32 |
 | CTD used instead | EN668 |
 
-TDR also not used priot to EN608 (the older OOI cruises maybe list here?)
+Prior to EN608, the first dedicated NES-LTER transect cruise, zooplankton sampling consisted of vertical ring net tows (AR28B, AR31A, AR34B, AR39B, AR61B, AR66B) conducted in collaboration with OOI. No Bongo tows or TDR data exist for these cruises, zooplankton samples from the ring net tows are available.
 
 ### CTD ([SeaBird SBE19plus V2 SEACAT](https://vocab.nerc.ac.uk/collection/L22/current/TOOL0871/)), serial no. 8120
 
@@ -78,7 +78,7 @@ Recording interval: 4 Hz (0.25 seconds). Available for EN668 (no TDR) and EN706 
 
 ### PX sensor ([Kongsberg Simrad PX Universal](https://vocab.nerc.ac.uk/collection/L22/current/TOOL1797/)), serial no. 274571
 
-Recording interval: 2 seconds (most cruises); 4 seconds (AR99). Deployed with TDR starting AE2426.
+Recording interval: 2 seconds (most cruises); 4 seconds (AR99). Deployed with TDR starting cruise AE2426 (2024).
 
 | Cruises with PX data |
 |----------------------|
@@ -88,15 +88,14 @@ Recording interval: 2 seconds (most cruises); 4 seconds (AR99). Deployed with TD
 
 ## Data package outputs
 
-The three processed CSV files are the primary outputs submitted to EDI:
+Four processed CSV files are the primary outputs submitted to EDI:
 
 | File | Instrument | Columns |
 |------|-----------|---------|
-| `nes-lter-bongo-tdr.csv` | TDR | cruise, station, cast, date_time, depth_m, temp_C, down_up, note_code, note_detail, tdr_sampling_interval_sec, tdr_max_gap_sec |
-| `nes-lter-bongo-ctd.csv` | CTD | cruise, station, cast, date_time, depth_m, temp_C, conductivity_sm, density_kg_m3, descent_rate_ms, down_up, note_code, note_detail |
-| `nes-lter-bongo-px.csv`  | PX sensor | cruise, station, cast, date_time, depth_m, temp_C, down_up, note_code, note_detail, px_sampling_interval_sec |
-
-[PLACEHOLDER: NEED TO UPDATE WITH FINAL COLNAMES]
+| `nes-lter-bongo-tdr.csv` | TDR | cruise, station, cast, date_time, depth_m, temp_C, down_up, note_code, note_detail, serial_number, lifetime_cast, seastar_version, sampling_interval_sec, max_gap_sec, n_obs |
+| `nes-lter-bongo-ctd.csv` | CTD | cruise, station, cast, date_time, depth_m, temp_C, down_up, note_code, note_detail, file_start_time, conductivity_S_m, density_kg_m3, descent_rate_m_s, elapsed_s |
+| `nes-lter-bongo-px.csv` | PX sensor | cruise, station, cast, date_time, depth_m, temp_C, down_up, note_code, note_detail, file_start_time, sampling_interval_sec, max_gap_sec, n_obs |
+| `nes-lter-bongo-tdr-offsets.csv` | TDR offsets | cruise, station, cast, tdr_max_depth_m, px_max_depth_m, ctd_bongo_max_depth_m, offset_m |
 
 ---
 
@@ -134,10 +133,10 @@ The Kongsberg PX Universal D/T sensor is wirelessly deployed on the Bongo net fr
 
 ## Dependencies
 
-R packages: `tidyverse`, `here`, `zoo`, `glue`, `lubridate`, `xml2`, `oce`, `conflicted`
+R packages: `tidyverse`, `here`, `zoo`, `glue`, `lubridate`, `xml2`, `oce`, `conflicted`, `plotly`, `readxl`, `openxlsx`
 
 External data dependencies (not in this repo):
-- Bongo logsheet metadata: `all-nes-lter-bongologs-YYYYMMDD.csv` — compiled in `nes-lter-tow-meta-v3` repo
+- Bongo logsheet metadata: `all-nes-lter-bongologs-YYYYMMDD.csv` — compiled in `nes-lter-tow-meta-v3` repo. It is similar to the metadata 
 - Event log data: `elog_zoop_tows_thruXXXX.csv` — compiled in `nes-lter-api-pulls` repo
 - NES-LTER REST API2: used in `03_tdr_offsets.R` to fetch shipboard CTD profiles
 
@@ -145,9 +144,9 @@ External data dependencies (not in this repo):
 
 ## Related packages and repositories
 
-- NES-LTER zooplankton abundance data package: [knb-lter-nes.25.2] add link 
-- NES-LTER zooplankton sample inventory: [knb-lter-nes.24.2] add link
-- NES-LTER event logs: [knb-lter-nes.20.2] add link
+- NES-LTER zooplankton abundance data package: [knb-lter-nes.25.2](https://doi.org/10.6073/pasta/15ef526d7e6c92ba551d31327625654c)
+- NES-LTER zooplankton sample inventory: [knb-lter-nes.24.2](https://doi.org/10.6073/pasta/8ff3d6baebd5e10cf59c527da0081e4b)
+- NES-LTER event logs: [knb-lter-nes.20.2](https://doi.org/10.6073/pasta/0cde75ba26923d87e107a1c440613209)
 - Bongo logsheet metadata: [nes-lter-tow-meta-v3](https://github.com/cabanelas/nes-lter-tow-meta-v3)
 - Event log data: [nes-lter-api-pulls](https://github.com/cabanelas/nes-lter-api-pulls)
 

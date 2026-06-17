@@ -10,31 +10,14 @@ library(here)
 ## ------------------------------------------ ##
 ##  Load most recent exported CSVs (publish-ready files) ----
 ## ------------------------------------------ ##
-tdr_file <- sort(list.files(here("data", "processed"),
-                            pattern = "^tdr_data.*\\.csv$",
-                            full.names = TRUE)) %>% tail(1)
-tdr_data <- read_csv(tdr_file, show_col_types = FALSE)
-
-ctd_file <- sort(list.files(here("data", "processed"),
-                            pattern = "^ctd_bongo_data.*\\.csv$",
-                            full.names = TRUE)) %>% tail(1)
-ctd_bongo_data <- read_csv(ctd_file, show_col_types = FALSE)
-
-px_file <- sort(list.files(here("data", "processed"),
-                           pattern = "^px_data_bongo.*\\.csv$",
-                           full.names = TRUE)) %>% tail(1)
-px_data_bongo_final <- read_csv(px_file, show_col_types = FALSE)
-
-offsets_file <- sort(list.files(here("data", "processed"),
-                                pattern = "^tdr_offsets_\\d{4}-\\d{2}-\\d{2}\\.csv$",
-                                full.names = TRUE)) %>% tail(1)
-offsets_final <- read_csv(offsets_file, show_col_types = FALSE)
-
-cat("Files loaded:\n")
-cat(" TDR:    ", basename(tdr_file), "\n")
-cat(" CTD:    ", basename(ctd_file), "\n")
-cat(" PX:     ", basename(px_file), "\n")
-cat(" Offsets:", basename(offsets_file), "\n\n")
+tdr_data <- read_csv(here("data", "processed", "nes-lter-bongo-tdr.csv"), 
+                     show_col_types = FALSE)
+ctd_bongo_data <- read_csv(here("data", "processed", "nes-lter-bongo-ctd.csv"), 
+                           show_col_types = FALSE)
+px_data_bongo_final <- read_csv(here("data", "processed", "nes-lter-bongo-px.csv"), 
+                                show_col_types = FALSE)
+offsets_final <- read_csv(here("data", "processed", "nes-lter-bongo-tdr-offsets.csv"),
+                          show_col_types = FALSE)
 
 tables <- list(tdr = tdr_data, ctd = ctd_bongo_data, px = px_data_bongo_final)
 
@@ -79,3 +62,17 @@ anti_join(tdr_data %>% distinct(cruise, station, cast),
           offsets_final %>% distinct(cruise, station, cast),
           by = c("cruise", "station", "cast")) %>%
   print(n = Inf)
+
+tdr_cols <- read_csv(here("data", "processed", "tdr-column-headers.csv"), show_col_types = FALSE)
+ctd_cols <- read_csv(here("data", "processed", "ctd-column-headers.csv"), show_col_types = FALSE)
+px_cols  <- read_csv(here("data", "processed", "px-column-headers.csv"),  show_col_types = FALSE)
+offset_cols <- read_csv(here("data", "processed", "tdr-offsets-column-headers.csv"),  show_col_types = FALSE) 
+
+tdr_cols
+ctd_cols
+px_cols
+offset_cols
+
+################################################################################
+# THE END
+################################################################################

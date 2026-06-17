@@ -20,8 +20,8 @@
 ##  NES-LTER API2 (https://github.com/WHOIGit/nes-lter-api-2/wiki) for MWT elog
 ##
 ##  Output:  data/processed/px_data_bongo_YYYY-MM-DD.rds
-##           data/processed/px_data_bongo.csv
-##           data/processed/px_column_reference.csv
+##           data/processed/nes-lter-bongo-px.csv
+##           data/processed/px-column-headers.csv
 ##           figures/px_sensor_profiles_check.pdf
 ##           figures/px_sensor_profiles_trimmed.pdf
 ##           figures/px_sensor_profiles_labeled.pdf           
@@ -1010,7 +1010,7 @@ saveRDS(px_data_bongo_final,
              paste0("px_data_bongo_", Sys.Date(), ".rds")))
 
 write_csv(px_data_bongo_final,
-          here("data", "processed", "px_data_bongo.csv"))
+          here("data", "processed", "nes-lter-bongo-px.csv"))
 
 tibble(column = names(px_data_bongo_final)) %>%
   write_csv(here("data", "processed", "px-column-headers.csv"))
