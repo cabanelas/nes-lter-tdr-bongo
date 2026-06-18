@@ -289,6 +289,63 @@ ggplot(heatmap_df, aes(x = station, y = cruise, fill = status)) +
   ) +
   guides(fill = guide_legend(nrow = 2, override.aes = list(color = "white")))
 
+## simplified available / not available version
+status_colors_simple <- c(
+  available     = "#1D9E75",  # green - data present (regardless of flags)
+  not_available = "#B4B2A9",  # gray - no data recovered
+  na            = "#F1EFE8"   # very light gray - station not sampled
+)
+
+status_labels_simple <- c(
+  available     = "Available",
+  not_available = "Not available",
+  na            = "Station not sampled"
+)
+
+heatmap_df_simple <- heatmap_df %>%
+  mutate(status = case_when(
+    status %in% c("good", "note", "incomplete") ~ "available",
+    status == "missing" ~ "not_available",
+    TRUE ~ as.character(status)
+  )) %>%
+  mutate(status = factor(status, levels = names(status_colors_simple)))
+
+pdf(here("figures", "instrument_coverage_heatmap_available.pdf"),
+    width = 14, height = 8)
+
+ggplot(heatmap_df_simple, aes(x = station, y = cruise, fill = status)) +
+  geom_tile(color = "white", linewidth = 0.4) +
+  geom_point(data = notes_df,
+             aes(x = station, y = cruise, shape = note_code),
+             inherit.aes = FALSE, size = 2, color = "black") +
+  scale_shape_manual(
+    values = c(no_max_depth = 8, hit_bottom = 16),
+    labels = c(no_max_depth = "No max. depth recorded",
+               hit_bottom    = "No zooplankton sample"),
+    name = NULL
+  ) +
+  scale_fill_manual(values  = status_colors_simple,
+                    labels  = status_labels_simple,
+                    name    = NULL,
+                    na.value = "#F1EFE8") +
+  facet_wrap(~instrument, ncol = 3) +
+  labs(x = NULL, y = NULL) +
+  theme_minimal(base_size = 11) +
+  theme(
+    axis.text.x      = element_text(size = 9, angle = 45, hjust = 1, 
+                                    color = "black"),
+    axis.text.y      = element_text(size = 8, color = "black"),
+    strip.text       = element_text(size = 11, face = "bold"),
+    legend.position  = "bottom",
+    legend.text      = element_text(size = 9),
+    legend.box       = "vertical",
+    panel.grid       = element_blank()
+  ) +
+  guides(fill  = guide_legend(nrow = 1, override.aes = list(color = "white")),
+         shape = guide_legend(nrow = 1))
+
+dev.off()
+
 ## ------------------------------------------ ##
 ##  1b. Heatmap add years to y axis  ----
 ## ------------------------------------------ ##
@@ -363,6 +420,8 @@ summary_df <- coverage %>%
     status     = factor(status, levels = names(status_colors))
   ) %>%
   count(cruise, instrument, status)
+
+dev.off()
 
 pdf(here("figures", "instrument_coverage_summary.pdf"),
     width = 14, height = 6)
