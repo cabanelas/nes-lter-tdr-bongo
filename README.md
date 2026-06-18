@@ -23,7 +23,7 @@ R/
 ├── 02_ctd_bongo_tidy.R       read, clean, label, and QC CTD CNV files
 ├── 02_px_sensor_tidy.R       read, clean, label, and QC PX sensor CSVs
 ├── 03_tdr_offsets.R          compute TDR depth offsets
-└── 04_instrument_coverage.R  coverage heatmap and summaries
+├── 04_instrument_coverage.R  coverage heatmap and summaries
 └── 05_qaqc_check.R           final structural QA/QC 
 data/
 ├── raw/
@@ -31,12 +31,17 @@ data/
 │   ├── ctd_bongo/            raw SeaBird CNV files (EN668, EN706)
 │   ├── px_sensor/            raw PX sensor CSVs and telemetry XMLs per cruise
 │   ├── all-nes-lter-bongologs-YYYYMMDD.csv   bongo logsheet metadata
-│   └── elog_zoop_tows_thruXXXX.csv           shipboard event log data for bongos
+│   ├── elog_zoop_tows_thruXXXX.csv           shipboard event log data for bongos
 │   └── tdr_offsets.csv       manually curated TDR offset notes (input to 03_tdr_offsets.R)
 └── processed/
+    ├── nes-lter-bongo-tdr.csv
+    ├── nes-lter-bongo-ctd.csv
+    ├── nes-lter-bongo-px.csv
+    └── nes-lter-bongo-tdr-offsets.csv
+session_info.txt              R version and package versions
 ```
 
-> **Note:** Raw instrument data files and saved figures are not pushed to GitHub. The `data/processed/` outputs are the files submitted to EDI. See the EDI data package for the published versions. 
+> **Note:** Raw instrument data files, figures, and processed files are not pushed to GitHub. The `data/processed/` outputs are the files submitted to EDI. See the EDI data package for the published versions. 
 
 ---
 
@@ -74,7 +79,7 @@ Recording interval: nominally 1 second (actual interval per deployment is in the
 | No TDR data | EN661, EN695, AR32, AR38, AR63 |
 | CTD used instead | EN668 |
 
-Prior to EN608, the first dedicated NES-LTER transect cruise, zooplankton sampling consisted of vertical ring net tows (AR28B, AR31A, AR34B, AR39B, AR61B, AR66B) conducted in collaboration with OOI. No Bongo tows or TDR data exist for these cruises, zooplankton samples from the ring net tows are available.
+Prior to EN608, the first dedicated NES-LTER transect cruise, zooplankton sampling consisted of vertical ring net tows (AR28B, AR31A, AR34B, AR39B, AR61B, AR66B) conducted in collaboration with OOI. No Bongo tows or TDR data exist for these cruises.
 
 ### CTD ([SeaBird SBE19plus V2 SEACAT](https://vocab.nerc.ac.uk/collection/L22/current/TOOL0871/)), serial no. 8120
 
@@ -84,9 +89,7 @@ Recording interval: 4 Hz (0.25 seconds). Available for EN668 (no TDR) and EN706 
 
 Recording interval: 2 seconds (most cruises); 4 seconds (AR99). Deployed with TDR starting in fall 2024 (cruise AE2426).
 
-| Cruises with PX data |
-|----------------------|
-| AE2426, EN727, AR88, AR92, AR95, AR99 |
+Cruises with PX data: AE2426, EN727, AR88, AR92, AR95, AR99
 
 ---
 
