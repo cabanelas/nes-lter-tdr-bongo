@@ -12,10 +12,10 @@
 ##  Functions are in 00_helpers.R
 ##
 ##  Input:  data/raw/tdr_data/<CRUISE>_TDR/*.csv   (one CSV per bongo tow)
-##          data/raw/elog_zoop_tows_thruAR99_2026-04-14.csv
+##          data/raw/elog_zoop_tows_thruHRS2609_2026-09-11
 ##                  from nes-lter-api-pulls.Rproj; 01_elog_pull.R
-##          data/raw/all-nes-lter-bongologs-20260526.csv
-##                  from nes-lter-tow-meta-v3.Rproj; 01_merge_bongo_logs.R
+##   !!UPTADE       data/raw/nes-lter-bongologs-AR99-20260811.csv
+##                  from nes-lter-tow-meta-v3.Rproj; 03_bongo_logs_merge.R
 ##                          
 ##  Output: data/processed/tdr_data_no_offset_Sys.Date.rds (all cruises)
 ##          data/processed/nes-lter-bongo-tdr.csv         (all cruises)
@@ -29,7 +29,7 @@
 ###############################################################
 
 ## ------------------------------------------ ##
-# includes the following cruises (21): 
+# includes the following cruises (23): 
 # 2018 = EN608, EN617
 # 2019 = EN627, EN644
 # 2020 = EN649, EN655, EN657
@@ -38,7 +38,7 @@
 # 2023 = HRS2303, EN706, AR77
 # 2024 = EN712, EN715, EN720, AE2426
 # 2025 = EN727, AR88, AR92, AR95
-# 2026 = AR99, ***need to add HRS2601***
+# 2026 = AR99, HRS2601, HRS2609
 
 # MISSING DATA
 ## EN661 (winter 2021) logsheets say tdr recorded but didnt find data
@@ -87,7 +87,7 @@ all_csv_paths <- list.files(RAW_DIR,
                             full.names  = TRUE,
                             recursive   = TRUE)
 
-message(length(all_csv_paths), " CSV file(s).") # ~240+ files
+message(length(all_csv_paths), " CSV file(s).") # ~271 files
 
 ## ------------------------------------------ ##
 ##  1b. TDR serial numbers from DAT headers
@@ -99,7 +99,7 @@ dat_files <- list.files(RAW_DIR,
   keep(~ tools::file_ext(.x) %in% c("DAT", "dat") | 
          (tools::file_ext(.x) == "" & 
             str_detect(basename(.x), "^[12]\\$")))  # extensionless Star-Oddi files start with 1$
-length(dat_files) #should be 236
+length(dat_files) #should be 266
 
 tdr_serials <- map_dfr(dat_files, extract_tdr_serial) %>%
   mutate(
@@ -123,7 +123,7 @@ all_data <- lapply(all_csv_paths, read_tdr_csv) %>%
   left_join(tdr_serials, by = c("cruise", "station", "cast")) # add tdr sn
 message("  Total rows: ", nrow(all_data))
 
-length(unique(all_data$cruise)) # 21 cruises
+length(unique(all_data$cruise)) # 23 cruises
 
 ## add missing Serial numbers
 all_data <- all_data %>%
@@ -145,7 +145,8 @@ all_data %>%
   group_by(cruise) %>%
   summarise(n_rows = n(), .groups = "drop") %>%
   arrange(n_rows) %>%
-  print(n = Inf)
+  arrange(desc(n_rows)) %>%
+  print(n = Inf) 
 
 # --- casts per cruise ----
 all_data %>%
@@ -236,9 +237,14 @@ all_data <- all_data %>%
     ),
     station = strip_leading_zeros(station, "L"),
     # cast: strip leading zeros, add B prefix if missing
-    cast = gsub("^B0*(\\d+.*)", "B\\1", cast),
-    cast = ifelse(!grepl("^B", cast, ignore.case = TRUE),
-                  paste0("B", cast), cast)
+    # cast = gsub("^B0*(\\d+.*)", "B\\1", cast),
+    # cast = ifelse(!grepl("^B", cast, ignore.case = TRUE),
+    #               paste0("B", cast), cast)
+    cast = case_when(
+      grepl("^R", cast, ignore.case = TRUE) ~ cast,
+      grepl("^B", cast, ignore.case = TRUE) ~ gsub("^B0*(\\d+.*)", "B\\1", cast),
+      TRUE ~ paste0("B", cast)
+    )
   ) %>% filter(!is.na(depth_m), !is.na(date_time)) # depth_m >= 0,
 # checked warnings and not an issue
 
@@ -294,7 +300,7 @@ gap_diagnostics %>%
   filter(time_gap_to_next > 2) %>%
   select(cruise, station, cast, elapsed, time_gap_to_next, depth_m) %>%
   arrange(desc(time_gap_to_next)) %>%
-  print(n = 30)
+  print(n = 90)
 rm(gap_diagnostics)
 
 # --- depth profile plots per cruise ----
@@ -327,18 +333,21 @@ all_data %>%
 
 ## ---------------------------------------------------- ##
 ## multiple casts - need to manually inspect:
-# EN617 = L11B25ab = flowmeter calibration
-# EN627 = L8B19 = re-did deployment; so delete first aborted cast
-# EN657 = L3B2 (this contains L1 file); L6B17; L9B8 (L9B14,L8B15)
-# EN706 = L5B6 = re-did deployment; so delete first aborted cast
-# AR77  = L2B2 = re-did deployment; so delete first aborted cast
-# EN715 = L5B6 = re-did deployment; so delete first aborted cast
-#       = L6B13 = re-did deployment; so delete first aborted cast
-#       = L8B14 = re-did deployment; so delete first aborted cast
-# AE2426 = L8B13 = up/downs before actual cast
-# AR99 = L2B3  = the second cast is a ring net only at same L2R3
-#      = L6B10 = the second cast is a ring net only at same L2R3
-#      = L9B5  = the second cast is a ring net only at same L2R3
+# EN617   = L11B25ab = flowmeter calibration
+# EN627   = L8B19 = re-did deployment; so delete first aborted cast
+# EN657   = L3B2 (this contains L1 file); L6B17; L9B8 (L9B14,L8B15)
+# EN706   = L5B6 = re-did deployment; so delete first aborted cast
+# AR77    = L2B2 = re-did deployment; so delete first aborted cast
+# EN715   = L5B6 = re-did deployment; so delete first aborted cast
+#         = L6B13 = re-did deployment; so delete first aborted cast
+#         = L8B14 = re-did deployment; so delete first aborted cast
+# AE2426  = L8B13 = up/downs before actual cast
+# AR99    = L2B3  = the second cast is a ring net only at same L2R3
+#         = L6B10 = the second cast is a ring net only at same L2R3
+#         = L9B5  = the second cast is a ring net only at same L2R3
+# HRS2609 = L2B2 and L2R2 both have both casts, need to separate
+#         = L6B10 and L6R10 both have both casts, need to separate
+#         = L9B15 and L9R15 both have both casts, need to separate
 ## ---------------------------------------------------- ##
 
 ## ------------------------------------------ ##
@@ -389,8 +398,13 @@ all_data %>%
 #              = L9B5 = the second cast is a ring net only at same L9R5
 #              = L10B6 = TDR turned on after net in water (data starts at ~37m)
 #              = L6B10 = the second cast is a ring net only at same L6R10
-
-# 2026 = ***need to add HRS2601***
+# 2026 = HRS2601 = L1B1 = BAD CAST need to delete (B1 redone at diff station)
+#                = L7B10 no TDR data
+# 2026 = HRS2609 = L2B2 and L2R2 both have both casts, need to separate
+#                = L6B10 and L6R10 both have both casts, need to separate
+#                = L9B15 and L9R15 both have both casts, need to separate
+#                = L6B10 TDR turned on after net in water (data starts at ~41m)
+#                = L3B37 TDR turned on after net in water (data starts at ~30m)
 ## ------------------------------------------ ##
 
 ## ------------------------------------------ ##
@@ -423,7 +437,7 @@ all_data %>%
 ## ------------------------------------------ ##
 ##  4. Isolate TDR-CTD bench tests   ----
 ## ------------------------------------------ ##
-# at a couple of cruises; the TDR was attached to the shiboard/regular 
+# at a couple of cruises; the TDR was attached to the shipboard/regular 
 # CTD cast to then compare max depth between CTD and TDR and apply depth 
 # offset if needed. this is dealt with in 03_tdr_offsets
 
@@ -468,7 +482,13 @@ rm(tdr_test)
 # 01_elog_pull.R
 # https://github.com/cabanelas/nes-lter-api-pulls
 elog <- read_csv(file.path("data", "raw",
-                           "elog_zoop_tows_thruAR99_2026-04-14.csv"))
+                           "elog_zoop_tows_thruHRS2609_2026-09-11.csv"))
+
+# see latest/most recent cruise avail in elog csv
+elog %>%
+  group_by(cruise) %>%
+  summarise(date = max(date, na.rm = TRUE), .groups = "drop") %>%
+  slice_max(date, n = 1)
 
 # pivot elog to get deploy and recover times in same row
 elog_wide <- elog %>%
@@ -527,6 +547,7 @@ timestamp_check %>%
   arrange(cruise, station, cast)
 # EN655 = L9B15 hit bottom = no sample = tdr cast but no sample
 # EN712  = L6B5 hit bottom = no sample = tdr cast but no sample
+# HRS2601 = L1B1 bad cast, issue with winch = station redone later
 
 tdr_maxdepth <- all_data %>%
   group_by(cruise, station, cast) %>%
@@ -594,6 +615,7 @@ all_data <- all_data %>%
 # MANUALLY CHECKED TIMESTAMP against all-nes-lter-bongologs EN608, EN617,
 # EN627, EN644, EN649, EN655, EN657, AT46, EN687, HRS2303, EN706, AR77,
 # EN712, EN715, EN720, AE2426, EN727, AR88, AR92, AR95, AR99 
+# !! need to do for HRS2601 and HRS2609
 
 tdr_times_corrected <- all_data %>%
   group_by(cruise, station, cast) %>%
@@ -610,7 +632,7 @@ timestamp_check_corrected <- tdr_times_corrected %>%
     offset_deploy_min  = as.numeric(difftime(tdr_start, elog_deploy, units = "mins")),
     duration_diff_min  = tdr_duration_min - elog_duration_min,
     flag_no_elog       = is.na(elog_deploy),
-    flag_large_offset  = abs(offset_deploy_min) > 60,   # >1hr deploy offset = possible clock issue
+    flag_large_offset  = abs(offset_deploy_min) > 60, # >1hr deploy offset = possible clock issue
   )
 rm(elog, elog_wide, tdr_times, tdr_times_corrected, 
    timestamp_check, timestamp_check_corrected, tdr_maxdepth, maxdepth_check,
@@ -632,7 +654,7 @@ all_data <- all_data %>%
 all_data %>%
   distinct(cruise, station, cast) %>%
   filter(grepl("_\\d+$", cast)) %>%
-  arrange(cruise, station, cast) # 14
+  arrange(cruise, station, cast) %>% print(n=Inf) # 26
 
 n_split <- all_data %>%
   distinct(cruise, station, cast) %>%
@@ -748,6 +770,21 @@ walk(plots, print)
 # EN715  = re-deployed; delete first aborted cast
 #        L8 B14_1 = 28 min, 136 m  -> tow 1               -> DROP
 #        L8 B14_2 = 13 min, 137 m  -> tow 2               -> rename to B14
+#
+# HRS2609 = first cast ring net only; second cast is bongo net
+#        L2 B2_1                   -> ring tow            -> rename to R2 
+#        L2 B2_2                   -> bongo tow           -> rename to B2
+# can completely delete the L2R2 because its duplicated/fixed above
+# 
+# HRS2609 = first cast bongo net; second cast is ring net only
+#        L6 B10_1                   -> bongo tow          -> rename to B10 
+#        L6 B10_2                   -> ring tow           -> rename to R10
+# can completely delete the L6R10 because its duplicated/fixed above
+#
+# HRS2609 = first cast ring net only; second cast is bongo net
+#        L9 B15_1                   -> ring tow            -> rename to R15 
+#        L9 B15_2                   -> bongo tow           -> rename to B15
+# can completely delete the L9R15 because its duplicated/fixed above
 
 ## --- Manual resolution of auto-split casts ---
 all_data <- all_data %>%
@@ -781,6 +818,18 @@ all_data <- all_data %>%
     # EN715 L8: B14_1 aborted; B14_2 real cast
     cruise == "EN715"  & station == "L8" & cast == "B14_2" ~ "B14",
     
+    # HRS2609 L2: B2_1 ring, B2_2 bongo
+    cruise == "HRS2609"   & station == "L2" & cast == "B2_1"  ~ "R2",
+    cruise == "HRS2609"   & station == "L2" & cast == "B2_2"  ~ "B2",
+    
+    # HRS2609 L6: B10_1 bongo, B10_2 ring
+    cruise == "HRS2609"   & station == "L6" & cast == "B10_1"  ~ "B10",
+    cruise == "HRS2609"   & station == "L6" & cast == "B10_2"  ~ "R10",
+    
+    # HRS2609 L9: B15_1 ring, B15_2 bongo
+    cruise == "HRS2609"   & station == "L9" & cast == "B15_1"  ~ "R15",
+    cruise == "HRS2609"   & station == "L9" & cast == "B15_2"  ~ "B15",
+    
     TRUE ~ cast
   )) %>%
   filter(
@@ -792,7 +841,14 @@ all_data <- all_data %>%
     # B17_1 = 2020-10-17 00:21-00:38 not sure what this one is == cant find notes on logsheet == went down to 95
     # B17_2 = 2020-10-17 01:14-01:28 == L6B17 == went down to 72
     !(cruise == "EN715"  & station == "L6" & cast == "B13_1"),  # aborted
-    !(cruise == "EN715"  & station == "L8" & cast == "B14_1")   # aborted
+    !(cruise == "EN715"  & station == "L8" & cast == "B14_1"),   # aborted
+    # all these are duplicates
+    !(cruise == "HRS2609"& station == "L2" & cast == "R2_1"),
+    !(cruise == "HRS2609"& station == "L2" & cast == "R2_2"),
+    !(cruise == "HRS2609"& station == "L6" & cast == "R10_1"),
+    !(cruise == "HRS2609"& station == "L6" & cast == "R10_2"),
+    !(cruise == "HRS2609"& station == "L9" & cast == "R15_1"),
+    !(cruise == "HRS2609"& station == "L9" & cast == "R15_2")
   )
 
 # verify: no _1/_2 suffixes should remain
@@ -1067,22 +1123,28 @@ all_data %>%
 all_data <- all_data %>%
   filter(!(cruise == "EN617" & station == "L1" & cast == "B1"))
 
+# HRS2601 L1B1 = filename-flagged "_fail" cast, bad tow
+all_data <- all_data %>%
+  filter(!(cruise == "HRS2601" & station == "L1" & cast == "B1"))
+
 ## ------------------------------------------ ##
 ##  9. Trim casts to elog deploy/recover times ----
 ## ------------------------------------------ ##
 # first tried using the elog times to trim, but some discrepancies (time lags)
 # using times from bongo log sheets
 
-# created in nes-lter-tow-meta-v3.Rproj; 01_merge_bongo_logs.R
+# created in nes-lter-tow-meta-v3.Rproj; 03_bongo_logs_merge.R
+# meta <- read_csv(file.path("data", "raw",
+#                            "all-nes-lter-bongologs-20260526.csv"))
 meta <- read_csv(file.path("data", "raw",
-                           "all-nes-lter-bongologs-20260526.csv"))
-
+                           "nes-lter-bongologs-AR99-20260811.csv"))
+## !!! NEEDS UPDATED 
 ## ------------------------------------------ ##
 ##  Parse logsheet times from meta ----
 ## ------------------------------------------ ##
 
 meta_times <- meta %>%
-  select(cruise, station, cast, 
+  select(cruise, station, cast, net_type,
          meta_deploy  = datetime_UTC_start, 
          meta_recover = datetime_UTC_end)
 
@@ -1177,17 +1239,37 @@ meta_times %>%
 BUFFER_SECS <- 180  # 3min buffer on each side
 
 tdr_trim <- all_data %>%
-  mutate(cast_join = str_remove(cast, "^[BR]")) %>%   # B1 -> 1, R19 -> 19
-  left_join(meta_times, by = c("cruise", "station", "cast_join" = "cast")) %>%
+  mutate(
+    net_prefix = str_extract(cast, "^[BR]"),     # "B" or "R" from all_data's cast
+    cast_join  = str_remove(cast, "^[BR]")
+  ) %>%
+  left_join(
+    meta_times %>%
+      mutate(net_prefix = if_else(net_type == "ring", "R", "B")),
+    by = c("cruise", "station", "cast_join" = "cast", "net_prefix")
+  ) %>%
   filter(
-    grepl("^R", cast) |          # ring nets: skip trim, no logsheet times
-    is.na(meta_deploy) |
+    # grepl("^R", cast) |
+      is.na(meta_deploy) |
       (is.na(meta_recover) &
          date_time >= meta_deploy - BUFFER_SECS) |
       (date_time >= meta_deploy  - BUFFER_SECS &
          date_time <= meta_recover + BUFFER_SECS)
   ) %>%
-  select(-meta_deploy, -meta_recover, -cast_join)
+  select(-meta_deploy, -meta_recover, -cast_join, -net_prefix)
+# 
+# tdr_trim <- all_data %>%
+#   mutate(cast_join = str_remove(cast, "^[BR]")) %>%   # B1 -> 1, R19 -> 19
+#   left_join(meta_times, by = c("cruise", "station", "cast_join" = "cast")) %>%
+#   filter(
+#     grepl("^R", cast) |          # ring nets: skip trim, no logsheet times
+#     is.na(meta_deploy) |
+#       (is.na(meta_recover) &
+#          date_time >= meta_deploy - BUFFER_SECS) |
+#       (date_time >= meta_deploy  - BUFFER_SECS &
+#          date_time <= meta_recover + BUFFER_SECS)
+#   ) %>%
+#   select(-meta_deploy, -meta_recover, -cast_join)
 
 ## --- flag casts that need manual review (deploy only, no recover time) ---
 cruises_with_tdr <- all_data %>%
@@ -1203,12 +1285,19 @@ print(manual_review)
 
 ## --- which casts had no meta match at all (fully untrimmed) ---
 tdr_trim %>%
-  filter(cruise %in% cruises_with_tdr$cruise) %>%  # only cruises with TDR
+  filter(cruise %in% cruises_with_tdr$cruise) %>%
   distinct(cruise, station, cast) %>%
-  mutate(cast_join = str_remove(cast, "^B")) %>%
-  anti_join(meta_times %>% filter(!is.na(meta_deploy)),
-            by = c("cruise", "station", "cast_join" = "cast")) %>%
-  select(-cast_join) %>%
+  mutate(
+    net_prefix = str_extract(cast, "^[BR]"),
+    cast_join  = str_remove(cast, "^[BR]")
+  ) %>%
+  anti_join(
+    meta_times %>%
+      filter(!is.na(meta_deploy)) %>%
+      mutate(net_prefix = if_else(net_type == "ring", "R", "B")),
+    by = c("cruise", "station", "cast_join" = "cast", "net_prefix")
+  ) %>%
+  select(-cast_join, -net_prefix) %>%
   arrange(cruise, station, cast)
 
 rm(meta_times, BUFFER_SECS, cruises_with_tdr, manual_review)
@@ -1247,10 +1336,6 @@ rm(df, p, cr)
 ##  9b. Post-trim manual fixes  ----
 ## ------------------------------------------ ##
 # not really a big time discrepancy or anything; just cutting off long tails 
-# AR99 ring cast times missing
-#         L2 R3    = 2026-01-14 05:43:35-05:53:29
-#         L9 R5    = 2026-01-14 23:23:00-00:03:00
-#         L6 R10   = 2026-01-15 22:57:00-23:23:00
 manual_fixes <- tribble(
   ~cruise,  ~station, ~cast, ~fix_type, ~fix_time,
   "EN720",  "L4",     "B6",  "start",   "2024-09-07 09:53:17",
@@ -1259,12 +1344,12 @@ manual_fixes <- tribble(
   "EN712",  "L5",     "B2",  "start",   "2024-02-10 04:47:42",
   "AE2426", "L1",     "B1",  "start",   "2024-11-06 17:09:00",
   "EN687",  "L1",     "B1",  "start",   "2022-07-29 19:50:00",
-  "AR99",   "L2",     "R3",  "start",   "2026-01-14 05:43:35",
-  "AR99",   "L9",     "R5",  "start",   "2026-01-14 23:23:00",
-  "AR99",   "L6",     "R10", "start",   "2026-01-15 22:57:00",
-  "AR99",   "L2",     "R3",  "end",     "2026-01-14 05:53:29",
-  "AR99",   "L9",     "R5",  "end",     "2026-01-15 00:03:00",
-  "AR99",   "L6",     "R10", "end",     "2026-01-15 23:23:00",
+  # "AR99",   "L2",     "R3",  "start",   "2026-01-14 05:43:35", #L2 R3    = 2026-01-14 05:43:35-05:53:29
+  # "AR99",   "L9",     "R5",  "start",   "2026-01-14 23:23:00", #L9 R5    = 2026-01-14 23:23:00-00:03:00
+  # "AR99",   "L6",     "R10", "start",   "2026-01-15 22:57:00", #L6 R10   = 2026-01-15 22:57:00-23:23:00
+  # "AR99",   "L2",     "R3",  "end",     "2026-01-14 05:53:29",
+  # "AR99",   "L9",     "R5",  "end",     "2026-01-15 00:03:00",
+  # "AR99",   "L6",     "R10", "end",     "2026-01-15 23:23:00",
   "EN687",  "L1",     "B1",  "end",     "2022-07-29 19:55:00",
   "EN687",  "L2",     "B2",  "end",     "2022-07-30 04:01:11",
   "AE2426", "L2",     "B4",  "end",     "2024-11-07 09:27:06",
@@ -1346,7 +1431,9 @@ cast_notes <- tribble(
   "EN657",  "L1",     "B1",  "late_start",    "TDR turned on after net in water; data starts at approx 4m on downcast",
   "EN655",  "L3",     "B3",  "late_start",    "TDR turned on after net in water; data starts at approx 10m on downcast",
   "EN657",  "L4",     "B6",  "late_start",    "TDR turned on after net in water; data starts at approx 6m on downcast",
-  "EN627",  "L2",     "B7",  "early_end",     "TDR turned off before bongo out; data stopped at approx 4m on upcast"
+  "EN627",  "L2",     "B7",  "early_end",     "TDR turned off before bongo out; data stopped at approx 4m on upcast",
+  "HRS2609","L3",     "B37", "late_start",    "TDR turned on after net in water; data starts at approx 30m on downcast",
+  "HRS2609","L6",     "B10", "late_start",    "TDR turned on after net in water; data starts at approx 41m on downcast"
 )
 
 # join notes into tdr_trim
@@ -1467,7 +1554,7 @@ row_flags %>%
 row_flags %>%
   filter(flag_temp_range) %>%
   select(cruise, station, cast, date_time, temp_C, depth_m) %>%
-  arrange(temp_C)
+  arrange(temp_C) %>% print(n=Inf)
 
 rm(row_flags)
 
