@@ -28,7 +28,8 @@ TDR available:
 - AR95
 2026
 - AR99
-- HRS2601 **need to add-no data yet**
+- HRS2601
+- HRS2609
 
 No TDR:
 - EN661 - i dont think TDR was used during this cruise - it does say recorded on sheets... so idk...
@@ -60,7 +61,8 @@ PX sensor available for:
 - AR95
 2026
 - AR99
-- HRS2601 **need to add no data yet**
+- HRS2601 
+- HRS2609
 
 Starting 2026? ring nets done separate from Bongo cast so TDR have separate 
 ring net 

@@ -75,7 +75,7 @@ Recording interval: nominally 1 second (actual interval per deployment is in the
 
 | Status | Cruises |
 |--------|---------|
-| Data available | EN608, EN617, EN627, EN644, EN649, EN655, EN657, AT46, EN687, HRS2303, EN706, AR77, EN712, EN715, EN720, AE2426, EN727, AR88, AR92, AR95, AR99 |
+| Data available | EN608, EN617, EN627, EN644, EN649, EN655, EN657, AT46, EN687, HRS2303, EN706, AR77, EN712, EN715, EN720, AE2426, EN727, AR88, AR92, AR95, AR99, HRS2601, HRS2609 |
 | No TDR data | EN661, EN695, AR32, AR38, AR63 |
 | CTD used instead | EN668 |
 
@@ -89,7 +89,7 @@ Recording interval: 4 Hz (0.25 seconds). Available for EN668 (no TDR) and EN706 
 
 Recording interval: 2 seconds (most cruises); 4 seconds (AR99). Deployed with TDR starting in fall 2024 (cruise AE2426).
 
-Cruises with PX data: AE2426, EN727, AR88, AR92, AR95, AR99
+Cruises with PX data: AE2426, EN727, AR88, AR92, AR95, AR99, HRS2601, HRS2609
 
 ---
 
