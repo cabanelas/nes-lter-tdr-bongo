@@ -19,11 +19,28 @@ library(dplyr)
 library(here)
 library(readxl)
 library(openxlsx)
+library(tidyverse)
 
 ## ------------------------------------------ ##
 ##  Helpers                                ----
 ## ------------------------------------------ ##
 TDR_DIR <- here("data", "raw", "tdr_data")
+
+## --- List raw files that need converting = skip if csv already exists ---
+# idempotent
+list_files_to_convert <- function(dir) {
+  files <- list.files(dir, full.names = TRUE)
+  files <- files[!grepl("\\.(csv|xlsx|xls)$", files, ignore.case = TRUE)]
+  
+  stems   <- gsub("\\.[^.]+$", "", basename(files))
+  has_csv <- file.exists(file.path(dirname(files), paste0(stems, ".csv")))
+  
+  if (any(has_csv)) {
+    message(sprintf("  Skipping %d already-converted file(s)", sum(has_csv)))
+  }
+  
+  files[!has_csv]
+}
 
 ## --- Parse a single TDR .DAT file ---
 #' @param file  Full path to a .DAT file.
@@ -109,13 +126,12 @@ save_cruise_outputs <- function(combined_df, cruise_id) {
 # NOTE: L02 & L03 casts together in same .DAT file. fixed here w timestamps
 
 message("Processing EN627 ...")
-
-en627_files <- list.files(
-  file.path(TDR_DIR, "EN627_TDR"),
-  pattern   = "\\.dat$",
-  full.names = TRUE
-)
-
+# en627_files <- list.files(
+#   file.path(TDR_DIR, "EN627_TDR"),
+#   pattern   = "\\.dat$",
+#   full.names = TRUE
+# )
+en627_files <- list_files_to_convert(file.path(TDR_DIR, "EN627_TDR"))
 en627_dat_list <- lapply(en627_files, read_dat_file)
 en627_combined <- do.call(rbind, en627_dat_list)
 
@@ -154,13 +170,12 @@ save_cruise_outputs(en627_combined, "EN627")
 ##         EN644         ----
 ## ------------------------------------------ ##
 message("Processing EN644 ...")
-
-en644_files <- list.files(
-  file.path(TDR_DIR, "EN644_TDR"),
-  pattern    = "\\.dat$",
-  full.names = TRUE
-)
-
+# en644_files <- list.files(
+#   file.path(TDR_DIR, "EN644_TDR"),
+#   pattern    = "\\.dat$",
+#   full.names = TRUE
+# )
+en644_files <- list_files_to_convert(file.path(TDR_DIR, "EN644_TDR"))
 en644_combined <- do.call(rbind, lapply(en644_files, read_dat_file))
 
 en644_combined$station <- strip_leading_zeros(en644_combined$station, "L")
@@ -175,12 +190,11 @@ save_cruise_outputs(en644_combined, "EN644")
 #       uses full.names only (no pattern filter) to capture all files.
 
 message("Processing EN608 ...")
-
-en608_files <- list.files(
-  file.path(TDR_DIR, "EN608_TDR"),
-  full.names = TRUE
-)
-
+# en608_files <- list.files(
+#   file.path(TDR_DIR, "EN608_TDR"),
+#   full.names = TRUE
+# )
+en608_files <- list_files_to_convert(file.path(TDR_DIR, "EN608_TDR"))
 en608_combined <- do.call(rbind, lapply(en608_files, read_dat_file))
 
 en608_combined$station <- strip_leading_zeros(en608_combined$station, "L")
