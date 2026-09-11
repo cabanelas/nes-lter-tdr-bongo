@@ -29,7 +29,7 @@
 ###############################################################
 
 ## ------------------------------------------ ##
-# includes the following cruises (21): 
+# includes the following cruises (23): 
 # 2018 = EN608, EN617
 # 2019 = EN627, EN644
 # 2020 = EN649, EN655, EN657
@@ -38,7 +38,7 @@
 # 2023 = HRS2303, EN706, AR77
 # 2024 = EN712, EN715, EN720, AE2426
 # 2025 = EN727, AR88, AR92, AR95
-# 2026 = AR99, ***need to add HRS2601***
+# 2026 = AR99, HRS2601, HRS2609
 
 # MISSING DATA
 ## EN661 (winter 2021) logsheets say tdr recorded but didnt find data
@@ -87,7 +87,7 @@ all_csv_paths <- list.files(RAW_DIR,
                             full.names  = TRUE,
                             recursive   = TRUE)
 
-message(length(all_csv_paths), " CSV file(s).") # ~240+ files
+message(length(all_csv_paths), " CSV file(s).") # ~271 files
 
 ## ------------------------------------------ ##
 ##  1b. TDR serial numbers from DAT headers
@@ -99,7 +99,7 @@ dat_files <- list.files(RAW_DIR,
   keep(~ tools::file_ext(.x) %in% c("DAT", "dat") | 
          (tools::file_ext(.x) == "" & 
             str_detect(basename(.x), "^[12]\\$")))  # extensionless Star-Oddi files start with 1$
-length(dat_files) #should be 236
+length(dat_files) #should be 266
 
 tdr_serials <- map_dfr(dat_files, extract_tdr_serial) %>%
   mutate(
@@ -123,7 +123,7 @@ all_data <- lapply(all_csv_paths, read_tdr_csv) %>%
   left_join(tdr_serials, by = c("cruise", "station", "cast")) # add tdr sn
 message("  Total rows: ", nrow(all_data))
 
-length(unique(all_data$cruise)) # 21 cruises
+length(unique(all_data$cruise)) # 23 cruises
 
 ## add missing Serial numbers
 all_data <- all_data %>%
@@ -145,7 +145,8 @@ all_data %>%
   group_by(cruise) %>%
   summarise(n_rows = n(), .groups = "drop") %>%
   arrange(n_rows) %>%
-  print(n = Inf)
+  arrange(desc(n_rows)) %>%
+  print(n = Inf) 
 
 # --- casts per cruise ----
 all_data %>%
@@ -236,9 +237,14 @@ all_data <- all_data %>%
     ),
     station = strip_leading_zeros(station, "L"),
     # cast: strip leading zeros, add B prefix if missing
-    cast = gsub("^B0*(\\d+.*)", "B\\1", cast),
-    cast = ifelse(!grepl("^B", cast, ignore.case = TRUE),
-                  paste0("B", cast), cast)
+    # cast = gsub("^B0*(\\d+.*)", "B\\1", cast),
+    # cast = ifelse(!grepl("^B", cast, ignore.case = TRUE),
+    #               paste0("B", cast), cast)
+    cast = case_when(
+      grepl("^R", cast, ignore.case = TRUE) ~ cast,
+      grepl("^B", cast, ignore.case = TRUE) ~ gsub("^B0*(\\d+.*)", "B\\1", cast),
+      TRUE ~ paste0("B", cast)
+    )
   ) %>% filter(!is.na(depth_m), !is.na(date_time)) # depth_m >= 0,
 # checked warnings and not an issue
 
@@ -294,7 +300,7 @@ gap_diagnostics %>%
   filter(time_gap_to_next > 2) %>%
   select(cruise, station, cast, elapsed, time_gap_to_next, depth_m) %>%
   arrange(desc(time_gap_to_next)) %>%
-  print(n = 30)
+  print(n = 90)
 rm(gap_diagnostics)
 
 # --- depth profile plots per cruise ----
@@ -327,18 +333,21 @@ all_data %>%
 
 ## ---------------------------------------------------- ##
 ## multiple casts - need to manually inspect:
-# EN617 = L11B25ab = flowmeter calibration
-# EN627 = L8B19 = re-did deployment; so delete first aborted cast
-# EN657 = L3B2 (this contains L1 file); L6B17; L9B8 (L9B14,L8B15)
-# EN706 = L5B6 = re-did deployment; so delete first aborted cast
-# AR77  = L2B2 = re-did deployment; so delete first aborted cast
-# EN715 = L5B6 = re-did deployment; so delete first aborted cast
-#       = L6B13 = re-did deployment; so delete first aborted cast
-#       = L8B14 = re-did deployment; so delete first aborted cast
-# AE2426 = L8B13 = up/downs before actual cast
-# AR99 = L2B3  = the second cast is a ring net only at same L2R3
-#      = L6B10 = the second cast is a ring net only at same L2R3
-#      = L9B5  = the second cast is a ring net only at same L2R3
+# EN617   = L11B25ab = flowmeter calibration
+# EN627   = L8B19 = re-did deployment; so delete first aborted cast
+# EN657   = L3B2 (this contains L1 file); L6B17; L9B8 (L9B14,L8B15)
+# EN706   = L5B6 = re-did deployment; so delete first aborted cast
+# AR77    = L2B2 = re-did deployment; so delete first aborted cast
+# EN715   = L5B6 = re-did deployment; so delete first aborted cast
+#         = L6B13 = re-did deployment; so delete first aborted cast
+#         = L8B14 = re-did deployment; so delete first aborted cast
+# AE2426  = L8B13 = up/downs before actual cast
+# AR99    = L2B3  = the second cast is a ring net only at same L2R3
+#         = L6B10 = the second cast is a ring net only at same L2R3
+#         = L9B5  = the second cast is a ring net only at same L2R3
+# HRS2609 = L2B2 and L2R2 both have both casts, need to separate
+#         = L6B10 and L6R10 both have both casts, need to separate
+#         = L9B15 and L9R15 both have both casts, need to separate
 ## ---------------------------------------------------- ##
 
 ## ------------------------------------------ ##
@@ -389,8 +398,13 @@ all_data %>%
 #              = L9B5 = the second cast is a ring net only at same L9R5
 #              = L10B6 = TDR turned on after net in water (data starts at ~37m)
 #              = L6B10 = the second cast is a ring net only at same L6R10
-
-# 2026 = ***need to add HRS2601***
+# 2026 = HRS2601 = L1B1 = BAD CAST need to delete (B1 redone at diff station)
+#                = L7B10 no TDR data
+# 2026 = HRS2609 = L2B2 and L2R2 both have both casts, need to separate
+#                = L6B10 and L6R10 both have both casts, need to separate
+#                = L9B15 and L9R15 both have both casts, need to separate
+#                = L6B10 TDR turned on after net in water (data starts at ~41m)
+#                = L3B37 TDR turned on after net in water (data starts at ~30m)
 ## ------------------------------------------ ##
 
 ## ------------------------------------------ ##
@@ -423,7 +437,7 @@ all_data %>%
 ## ------------------------------------------ ##
 ##  4. Isolate TDR-CTD bench tests   ----
 ## ------------------------------------------ ##
-# at a couple of cruises; the TDR was attached to the shiboard/regular 
+# at a couple of cruises; the TDR was attached to the shipboard/regular 
 # CTD cast to then compare max depth between CTD and TDR and apply depth 
 # offset if needed. this is dealt with in 03_tdr_offsets
 
@@ -469,6 +483,12 @@ rm(tdr_test)
 # https://github.com/cabanelas/nes-lter-api-pulls
 elog <- read_csv(file.path("data", "raw",
                            "elog_zoop_tows_thruAR99_2026-04-14.csv"))
+
+# see latest/most recent cruise avail in elog csv
+elog %>%
+  group_by(cruise) %>%
+  summarise(date = max(date, na.rm = TRUE), .groups = "drop") %>%
+  slice_max(date, n = 1)
 
 # pivot elog to get deploy and recover times in same row
 elog_wide <- elog %>%
@@ -1066,6 +1086,10 @@ all_data %>%
 ## --- delete bad cast --- ##
 all_data <- all_data %>%
   filter(!(cruise == "EN617" & station == "L1" & cast == "B1"))
+
+# HRS2601 L1B1 = filename-flagged "_fail" cast, bad tow
+all_data <- all_data %>%
+  filter(!(cruise == "HRS2601" & station == "L1" & cast == "B1"))
 
 ## ------------------------------------------ ##
 ##  9. Trim casts to elog deploy/recover times ----
