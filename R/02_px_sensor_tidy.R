@@ -15,7 +15,7 @@
 ##          px_sensor/{cruise}_px_sensor/*.csv
 ##          elog_zoop_tows_thruHRS2609_2026-09-11
 ##            (from nes-lter-api-pulls.Rproj; 01_elog_pull.R)
-##          nes-lter-bongologs-AR99-20260811.csv
+##  !!NEED UPDATE      nes-lter-bongologs-AR99-20260811.csv
 ##            (from nes-lter-tow-meta-v3.Rproj; 03_bongo_logs_merge.R)
 ##  NES-LTER API2 (https://github.com/WHOIGit/nes-lter-api-2/wiki) for MWT elog
 ##
@@ -35,15 +35,15 @@
 ## ------------------------------------------ ##
 # PxSensor is generally not used at MVCO nor L1 -- too shallow 
 
-# AE2426 L2, L4, L6, L7, L8 
-# EN727  L3, L4, L5, L6, L7, L8, L10, L11
-# AR88   L2, L3, L4, L5, L6, L7, L8, L9, L10, L11    
-# AR92   L1, L2, L3, L4, L5, L6, L7, L8, L9, L10, L11
-# AR95   L1, L2, L3, L4, L5, L7, L8, L9, L10, L11   
-# AR99   L3, L4, L5, L6, L7, L8, L10                 
-# HRS2601
-# HRS2609
-
+# AE2426  L2, L4, L6, L7, L8 
+# EN727   L3, L4, L5, L6, L7, L8, L10, L11
+# AR88    L2, L3, L4, L5, L6, L7, L8, L9, L10, L11    
+# AR92    L1, L2, L3, L4, L5, L6, L7, L8, L9, L10, L11
+# AR95    L1, L2, L3, L4, L5, L7, L8, L9, L10, L11   
+# AR99    L3, L4, L5, L6, L7, L8, L10                 
+# HRS2601 L2, L3, L4, L5, L6, L7, L8, L9, L10, L11
+# HRS2609 L2, L3, L4, L5, L6, L7, L8, L9, L10, L11
+  
 ## AR99 L11 B9: PX sensor did not record; PX sensor logsheet max depth ~199m
 
 ## ------------------------------------------ ##
@@ -520,7 +520,7 @@ rm(px_maxdepth)
 #     L6 B8  incomplete upcast; correctly has max depth; upcast ends at ~81m
 #     L9 B7  incomplete upcast; correctly has max depth; upcast ends at ~100m
 #     L11 B5 incomplete downcast; correctly has max depth; downcast starts at ~51m
-# HRS2606
+# HRS2609
 #  *  L1 B1 looks bad
 #     L2 B2 cut off tail
 #     L3 B37 incomplete downcast; correctly has max depth; downcast starts at ~25m
@@ -632,7 +632,9 @@ dev.off()
 #    L9 B11 this looks bad; too shallow; logsheet say max depth ~200m = delete 
 # HRS2601 
 #    L10 B3 trim end at 2026-04-24 06:49:30
-
+# HRS2609
+#  * L1 B1 = looks bad; delete
+#    L2 B2 trim end at 2026-08-15 04:45:39
 
 ## ------------------------------------------ ##
 ##  Delete bad px sensor casts              ----
@@ -648,13 +650,16 @@ px_data_bongo2 <- px_data_bongo2 %>%
   filter(!(cruise == "AR95"  & station == "L6"  & cast == "B11"),
          !(cruise == "AR99"  & station == "L2"  & cast == "B3"),
          !(cruise == "AR99"  & station == "L9"  & cast == "B5"),
-         !(cruise == "EN727" & station == "L9"  & cast == "B11"))
+         !(cruise == "EN727" & station == "L9"  & cast == "B11"),
+         !(cruise == "HRS2609"& station == "L1"  & cast == "B1"))
 
 ## ------------------------------------------ ##
 ##  Manual time trims                       ----
 ## ------------------------------------------ ##
-## EN727 L8 B10: deep noise before 19:30:05, real cast 19:30:05-19:44:27
-## EN727 L5 B19: deep noise before 20:35:09, real cast 20:35:09-20:43:53
+## EN727  L8 B10: deep noise before 19:30:05, real cast 19:30:05-19:44:27
+## EN727  L5 B19: deep noise before 20:35:09, real cast 20:35:09-20:43:53
+# HRS2601 L10 B3: trim end at 2026-04-24 06:49:30
+# HRS2609 L2 B2 : trim end at 2026-08-15 04:45:39
 
 px_data_bongo2 <- px_data_bongo2 %>%
   mutate(date_time = date_time) %>%
@@ -662,14 +667,21 @@ px_data_bongo2 <- px_data_bongo2 %>%
     !(cruise == "EN727" & station == "L8" & cast == "B10" &
         date_time < as.POSIXct("2025-01-26 19:30:05", tz = "UTC")),
     !(cruise == "EN727" & station == "L5" & cast == "B19" &
-        date_time < as.POSIXct("2025-01-27 20:35:09", tz = "UTC"))
+        date_time < as.POSIXct("2025-01-27 20:35:09", tz = "UTC")),
+    !(cruise == "HRS2601" & station == "L10" & cast == "B3" &
+        date_time > as.POSIXct("2026-04-24 06:49:30", tz = "UTC")),
+    !(cruise == "HRS2609" & station == "L2" & cast == "B2" &
+        date_time > as.POSIXct("2026-08-15 04:45:39", tz = "UTC"))
   )
 
 ## verify
 px_data_bongo2 %>%
-  filter(cruise == "EN727", station %in% c("L8", "L5"), 
-         cast %in% c("B10", "B19")) %>%
-  group_by(station, cast) %>%
+  filter(
+    (cruise == "EN727"   & station %in% c("L8", "L5")   & cast %in% c("B10", "B19")) |
+      (cruise == "HRS2601" & station == "L10"              & cast == "B3") |
+      (cruise == "HRS2609" & station == "L2"                & cast == "B2")
+  ) %>%
+  group_by(cruise, station, cast) %>%
   summarise(start = min(date_time), end = max(date_time),
             max_depth = max(depth_m), .groups = "drop")
 
@@ -760,8 +772,12 @@ px_cast_notes <- tribble(
   "AR99",   "L8",     "B20",  "early_end", "Upcast ends at ~50m; sensor stopped recording before recovery",
   "EN727",  "L4",     "B5",   "early_end", "Upcast ends at ~30m; sensor stopped recording before recovery",
   "EN727",  "L10",    "B9",   "early_end", "Upcast ends at ~175m; sensor stopped recording before recovery",
-  "EN727",  "L6",     "B17",  "early_end", "Upcast ends at ~40m; sensor stopped recording before recovery"
-)
+  "EN727",  "L6",     "B17",  "early_end", "Upcast ends at ~40m; sensor stopped recording before recovery",
+  "HRS2601","L2",     "B15",  "early_end", "Upcast ends at ~35m; sensor stopped recording before recovery",
+  "HRS2601","L3",     "B11",  "early_end", "Upcast ends at ~37m; sensor stopped recording before recovery",
+  "HRS2601","L6",     "B8",  "early_end", "Upcast ends at ~81m; sensor stopped recording before recovery",
+  "HRS2601","L9",     "B7",  "early_end", "Upcast ends at ~100m; sensor stopped recording before recovery"
+  )
 
 px_data_bongo_final <- px_data_bongo_final %>%
   left_join(px_cast_notes, by = c("cruise", "station", "cast"))
@@ -918,9 +934,10 @@ rm(temp_jumps_px)
 ## max depth vs logsheet target
 # need meta loaded for this
 meta <- read_csv(file.path("data", "raw",
-                              "all-nes-lter-bongologs-20260526.csv"),
+                              "nes-lter-bongologs-AR99-20260811.csv"),
                     show_col_types = FALSE) %>%
-  filter(cruise %in% unique(px_data_bongo_final$cruise)) %>%
+  filter(cruise %in% unique(px_data_bongo_final$cruise),
+         net_type != "ring") %>%
   mutate(cast = paste0("B", cast))
 
 px_data_bongo_final %>%

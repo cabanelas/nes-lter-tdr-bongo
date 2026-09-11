@@ -11,8 +11,8 @@
 ##  Input:  data/processed/tdr_data_no_offset_Sys.Date.RDS
 ##          data/processed/tdr_ctd_tests.csv                (from 02_tdr_tidy.R)
 ##          data/raw/tdr_offsets.csv  
-##          data/raw/all-nes-lter-bongologs-20260526.csv
-##                      (from nes-lter-tow-meta-v3.Rproj; 01_merge_bongo_logs.R)
+##   ##!!need to update       data/raw/nes-lter-bongologs-AR99-20260811.csv
+##                      (from nes-lter-tow-meta-v3.Rproj; 03_bongo_logs_merge.R)
 ##          data/processed/px_data_bongo_DATE.RDS     (from 02_px_sensor_tidy.R)
 ##          data/processed/ctd_bongo_data_DATE.RDS    (from 02_ctd_bongo_tidy.R)
 ##  NES-LTER API 2
@@ -58,9 +58,9 @@ offsets <- read_csv(here("data", "raw", "tdr_offsets.csv")) %>%
 # 11 cruises
 # this was created a while ago; manually based on logsheet notes
 
-# created in nes-lter-tow-meta-v3.Rproj; 01_merge_bongo_logs.R
+# created in nes-lter-tow-meta-v3.Rproj; 03_bongo_logs_merge.R
 meta <- read_csv(file.path("data", "raw",
-                           "all-nes-lter-bongologs-20260526.csv"))
+                           "nes-lter-bongologs-AR99-20260811.csv"))
 
 ## ------------------------------------------ ##
 ##  1. CTD-TDR bench tests 
@@ -298,7 +298,7 @@ tdr_depth_summary %>%
     n_suspicious = sum(tdr_min_depth_m > 2 | tdr_min_depth_m < -2),
     .groups = "drop"
   ) %>%
-  arrange(desc(median))
+  arrange(desc(median)) %>% print(n=Inf)
 
 tdr_depth_summary %>%
   group_by(cruise, cast) %>%
@@ -612,12 +612,15 @@ offsets_draft <- bind_rows(
   arrange(cruise, station, cast)
 
 offsets_draft <- offsets_draft %>%
-  mutate(cast_num = str_remove(cast, "^[BR]")) %>%
+  mutate(net_prefix = str_extract(cast, "^[BR]"),
+         cast_num = str_remove(cast, "^[BR]")) %>%
   left_join(
-    meta %>% distinct(cruise, station, cast, depth_bottom, depth_target),
-    by = c("cruise", "station", "cast_num" = "cast")
+    meta %>%
+      distinct(cruise, station, cast, net_type, depth_bottom, depth_target) %>%
+      mutate(net_prefix = if_else(net_type == "ring", "R", "B")),
+    by = c("cruise", "station", "cast_num" = "cast", "net_prefix")
   ) %>%
-  select(-cast_num)
+  select(-cast_num, -net_prefix, -net_type)
 
 ## quick summaries
 offsets_draft %>% count(offset_source)
@@ -723,7 +726,9 @@ cruise_offsets <- tribble(
   "AR88",      4.3,
   "AR92",      4.6,
   "AR95",      5.3,
-  "AR99",      5.9
+  "AR99",      5.9,
+  "HRS2601",   6,
+  "HRS2609",   6.5
 )
 
 offsets_final <- offsets_draft %>%
