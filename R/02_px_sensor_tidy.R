@@ -13,10 +13,10 @@
 ##
 ##  Input: data/raw/  
 ##          px_sensor/{cruise}_px_sensor/*.csv
-##          elog_zoop_tows_thruAR99_2026-04-14.csv 
+##          elog_zoop_tows_thruHRS2609_2026-09-11
 ##            (from nes-lter-api-pulls.Rproj; 01_elog_pull.R)
-##          all-nes-lter-bongologs-20260526.csv
-##            (from nes-lter-tow-meta-v3.Rproj; 01_merge_bongo_logs.R)
+##          nes-lter-bongologs-AR99-20260811.csv
+##            (from nes-lter-tow-meta-v3.Rproj; 03_bongo_logs_merge.R)
 ##  NES-LTER API2 (https://github.com/WHOIGit/nes-lter-api-2/wiki) for MWT elog
 ##
 ##  Output:  data/processed/px_data_bongo_YYYY-MM-DD.rds
@@ -31,16 +31,18 @@
 # PxSensor data available starting AE2426
 # 2024 = AE2426
 # 2025 = EN727, AR88, AR92, AR95
-# 2026 = AR99, ***need to add HRS2601***
+# 2026 = AR99, HRS2601, HRS2609
 ## ------------------------------------------ ##
 # PxSensor is generally not used at MVCO nor L1 -- too shallow 
 
-# AE2426 L2, L4, L6, L7, L8                          
+# AE2426 L2, L4, L6, L7, L8 
+# EN727  L3, L4, L5, L6, L7, L8, L10, L11
 # AR88   L2, L3, L4, L5, L6, L7, L8, L9, L10, L11    
 # AR92   L1, L2, L3, L4, L5, L6, L7, L8, L9, L10, L11
 # AR95   L1, L2, L3, L4, L5, L7, L8, L9, L10, L11   
 # AR99   L3, L4, L5, L6, L7, L8, L10                 
-# EN727  L3, L4, L5, L6, L7, L8, L10, L11   
+# HRS2601
+# HRS2609
 
 ## AR99 L11 B9: PX sensor did not record; PX sensor logsheet max depth ~199m
 
@@ -234,7 +236,7 @@ rm(xml_info, xml_files)
 # 01_elog_pull.R
 # https://github.com/cabanelas/nes-lter-api-pulls
 elog <- read_csv(file.path("data", "raw",
-                           "elog_zoop_tows_thruAR99_2026-04-14.csv"))
+                           "elog_zoop_tows_thruHRS2609_2026-09-11.csv"))
 
 ## px cast_start must fall within elog deploy-recover window
 ## 2-min grace period allows for px logger starting slightly before elog deploy
@@ -373,10 +375,15 @@ rm(elog_mwt_window, truly_unmatched)
 ## ------------------------------------------ ##
 ##  Manual exclusions & assignments         ----
 ## ------------------------------------------ ##
-## AR92 2025-08-18 11:30:24  = IKMWT Tow7; missing recover in elog
-## AR99 2026-01-15 00:00:00  = bad
-## EN727 2025-01-27 00:00:01 = bongo cast L7 B14
+## AR92    2025-08-18 11:30:24  = IKMWT Tow7; missing recover in elog
+## AR99    2026-01-15 00:00:00  = bad == ring net cast?
+## EN727   2025-01-27 00:00:01  = bongo cast L7 B14
 ##   cast_start (00:00) is misleading; deploy was 04:43 UTC within file range
+## HRS2601 2026-04-22 19:11:50  = aborted cast; issues with winch; redone later
+## HRS2609 2026-08-16 03:29:08  = IKMWT
+## HRS2609 2026-08-18 04:11:28  = IKMWT 7 
+## HRS2609 2026-08-18 08:06:49  = IKMWT 8 
+
 px_manual_mwt <- tibble(
   cruise     = "AR92", cast_start = as.POSIXct("2025-08-18 11:30:24", tz = "UTC"),
   station    = "L7", cast = "Tow7"
@@ -507,6 +514,17 @@ rm(px_maxdepth)
 #     L6 B17 incomplete upcast; correctly has max depth; upcast ends at ~40m
 #  *  L5 B19 this looks bad; really deep; I think the real cast starts after
 #             first super deep data must be surface noise
+# HRS2601
+#     L2 B15 incomplete upcast; correctly has max depth; upcast ends at ~35m
+#     L3 B11 incomplete upcast; correctly has max depth; upcast ends at ~37m
+#     L6 B8  incomplete upcast; correctly has max depth; upcast ends at ~81m
+#     L9 B7  incomplete upcast; correctly has max depth; upcast ends at ~100m
+#     L11 B5 incomplete downcast; correctly has max depth; downcast starts at ~51m
+# HRS2606
+#  *  L1 B1 looks bad
+#     L2 B2 cut off tail
+#     L3 B37 incomplete downcast; correctly has max depth; downcast starts at ~25m
+# 
 
 ## ------------------------------------------ ##
 ##  Trim to elog deploy/recover window      ----
@@ -612,6 +630,9 @@ dev.off()
 #    L8 B10 casts starts and needs trimmed to 19:30:05-19:44:27 (b4 this, deep bad data) 
 #    L5 B19 casts starts and needs trimmed to 20:35:09-20:43:53 (b4 this, deep bad data)
 #    L9 B11 this looks bad; too shallow; logsheet say max depth ~200m = delete 
+# HRS2601 
+#    L10 B3 trim end at 2026-04-24 06:49:30
+
 
 ## ------------------------------------------ ##
 ##  Delete bad px sensor casts              ----
