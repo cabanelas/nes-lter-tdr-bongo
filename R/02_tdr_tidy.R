@@ -490,6 +490,12 @@ elog %>%
   summarise(date = max(date, na.rm = TRUE), .groups = "drop") %>%
   slice_max(date, n = 1)
 
+# see latest/most recent cruise avail in elog csv
+elog %>%
+  group_by(cruise) %>%
+  summarise(date = max(date, na.rm = TRUE), .groups = "drop") %>%
+  slice_max(date, n = 1)
+
 # pivot elog to get deploy and recover times in same row
 elog_wide <- elog %>%
   filter(action %in% c("deploy", "recover")) %>%
