@@ -12,7 +12,7 @@
 ##  Functions are in 00_helpers.R
 ##
 ##  Input:  data/raw/tdr_data/<CRUISE>_TDR/*.csv   (one CSV per bongo tow)
-##          data/raw/elog_zoop_tows_thruHRS2609_2026-09-11
+##          data/raw/elog_zoop_tows_thruHRS2609_2026-09-18
 ##                  from nes-lter-api-pulls.Rproj; 01_elog_pull.R
 ##   !!UPTADE       data/raw/nes-lter-bongologs-AR99-20260811.csv
 ##                  from nes-lter-tow-meta-v3.Rproj; 03_bongo_logs_merge.R
@@ -482,7 +482,7 @@ rm(tdr_test)
 # 01_elog_pull.R
 # https://github.com/cabanelas/nes-lter-api-pulls
 elog <- read_csv(file.path("data", "raw",
-                           "elog_zoop_tows_thruHRS2609_2026-09-11.csv"))
+                           "elog_zoop_tows_thruHRS2609_2026-09-18.csv"))
 
 # see latest/most recent cruise avail in elog csv
 elog %>%
@@ -1141,10 +1141,10 @@ all_data <- all_data %>%
 
 # created in nes-lter-tow-meta-v3.Rproj; 03_bongo_logs_merge.R
 # meta <- read_csv(file.path("data", "raw",
-#                            "all-nes-lter-bongologs-20260526.csv"))
-meta <- read_csv(file.path("data", "raw",
-                           "nes-lter-bongologs-AR99-20260811.csv"))
-## !!! NEEDS UPDATED 
+#                            "nes-lter-bongologs-AR99-20260811.csv"))
+meta <- readRDS(file.path("data", "raw",
+                           "tow-meta-v3-intermediate-HRS2609-20260918.rds"))
+ 
 ## ------------------------------------------ ##
 ##  Parse logsheet times from meta ----
 ## ------------------------------------------ ##
@@ -1364,7 +1364,10 @@ manual_fixes <- tribble(
   "EN706",  "L1",     "B1",  "end",     "2023-08-07 18:13:00",
   "EN617",  "MVCO",   "B35", "end",     "2018-07-25 01:46:18",
   "EN657",  "MVCO",   "B20", "end",     "2020-10-18 02:11:36",
-  "AE2426", "L1",     "B1",  "end",     "2024-11-06 17:17:06"
+  "AE2426", "L1",     "B1",  "end",     "2024-11-06 17:17:06",
+  "HRS2601", "L3",    "B11", "end",     "2026-04-26 02:57:00",
+  "HRS2601","MVCO",   "B20", "end",     "2026-04-27 06:04:00",
+  "HRS2609", "L1",    "B1"
 ) %>%
   mutate(fix_time = as.POSIXct(fix_time, tz = "UTC"))
 
