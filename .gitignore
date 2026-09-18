@@ -12,6 +12,7 @@ data/raw/*
 !data/raw/.gitkeep
 !data/raw/tdr_offsets.csv
 !data/raw/all-nes-lter-bongologs-20260526.csv
+!data/raw/tow-meta-v3-intermediate-HRS2609-20260918
 !data/raw/elog_zoop_tows_thruHRS2609_2026-09-18.csv
 
 # Data/processed - ignore contents, keep folder via .gitkeep

@@ -14,7 +14,8 @@
 ##  Input:  data/raw/tdr_data/<CRUISE>_TDR/*.csv   (one CSV per bongo tow)
 ##          data/raw/elog_zoop_tows_thruHRS2609_2026-09-18
 ##                  from nes-lter-api-pulls.Rproj; 01_elog_pull.R
-##   !!UPTADE       data/raw/nes-lter-bongologs-AR99-20260811.csv
+##          data/raw/tow-meta-v3-intermediate-HRS2609-20260918.rds
+##             (previously named nes-lter-bongologs-CRUISE-YYYYMMDD.csv)
 ##                  from nes-lter-tow-meta-v3.Rproj; 03_bongo_logs_merge.R
 ##                          
 ##  Output: data/processed/tdr_data_no_offset_Sys.Date.rds (all cruises)
@@ -490,12 +491,6 @@ elog %>%
   summarise(date = max(date, na.rm = TRUE), .groups = "drop") %>%
   slice_max(date, n = 1)
 
-# see latest/most recent cruise avail in elog csv
-elog %>%
-  group_by(cruise) %>%
-  summarise(date = max(date, na.rm = TRUE), .groups = "drop") %>%
-  slice_max(date, n = 1)
-
 # pivot elog to get deploy and recover times in same row
 elog_wide <- elog %>%
   filter(action %in% c("deploy", "recover")) %>%
@@ -620,8 +615,7 @@ all_data <- all_data %>%
 
 # MANUALLY CHECKED TIMESTAMP against all-nes-lter-bongologs EN608, EN617,
 # EN627, EN644, EN649, EN655, EN657, AT46, EN687, HRS2303, EN706, AR77,
-# EN712, EN715, EN720, AE2426, EN727, AR88, AR92, AR95, AR99 
-# !! need to do for HRS2601 and HRS2609
+# EN712, EN715, EN720, AE2426, EN727, AR88, AR92, AR95, AR99, HRS2601, HRS2609
 
 tdr_times_corrected <- all_data %>%
   group_by(cruise, station, cast) %>%
