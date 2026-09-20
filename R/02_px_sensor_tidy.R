@@ -245,6 +245,7 @@ elog <- read_csv(file.path("data", "raw",
 
 # these are bongo only elog entries
 elog_bongo_px_window <- elog %>%
+  # keep only cruises with PX data
   filter(cruise %in% unique(px_data$cruise)) %>%
   select(cruise, station, cast, action, elog_time = datetime8601) %>%
   mutate(across(c(cruise, station, cast), as.character)) %>%
