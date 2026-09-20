@@ -15,8 +15,10 @@
 ##          px_sensor/{cruise}_px_sensor/*.csv
 ##          elog_zoop_tows_thruHRS2609_2026-09-11
 ##            (from nes-lter-api-pulls.Rproj; 01_elog_pull.R)
-##  !!NEED UPDATE      nes-lter-bongologs-AR99-20260811.csv
-##            (from nes-lter-tow-meta-v3.Rproj; 03_bongo_logs_merge.R)
+##          tow-meta-v3-intermediate-HRS2609-20260918.rds
+##             (previously named nes-lter-bongologs-CRUISE-YYYYMMDD.csv)
+##                  from nes-lter-tow-meta-v3.Rproj; 03_bongo_logs_merge.R
+##
 ##  NES-LTER API2 (https://github.com/WHOIGit/nes-lter-api-2/wiki) for MWT elog
 ##
 ##  Output:  data/processed/px_data_bongo_YYYY-MM-DD.rds
@@ -236,7 +238,7 @@ rm(xml_info, xml_files)
 # 01_elog_pull.R
 # https://github.com/cabanelas/nes-lter-api-pulls
 elog <- read_csv(file.path("data", "raw",
-                           "elog_zoop_tows_thruHRS2609_2026-09-11.csv"))
+                           "elog_zoop_tows_thruHRS2609_2026-09-18.csv"))
 
 ## px cast_start must fall within elog deploy-recover window
 ## 2-min grace period allows for px logger starting slightly before elog deploy
@@ -286,8 +288,8 @@ rm(elog_bongo_px_window, elog)
 ## ------------------------------------------ ##
 ## there are Isaacs-Kidd Midwater Trawl px sensor data in here!
 # delete those that arent bongo tows
-# get elog from API2 to get Isaacs-Kidd Midwater Trawl 
 
+# get elog from API2 to get Isaacs-Kidd Midwater Trawl 
 ##  QC: verify unmatched are MWT     ----
 elog_mwt_window <- map_dfr(tolower(unique(px_data$cruise)), function(cr) {
   url <- paste0("https://nes-lter-api.whoi.edu/api/events/", cr, ".csv")
@@ -375,18 +377,32 @@ rm(elog_mwt_window, truly_unmatched)
 ## ------------------------------------------ ##
 ##  Manual exclusions & assignments         ----
 ## ------------------------------------------ ##
-## AR92    2025-08-18 11:30:24  = IKMWT Tow7; missing recover in elog
-## AR99    2026-01-15 00:00:00  = bad == ring net cast?
-## EN727   2025-01-27 00:00:01  = bongo cast L7 B14
+## -- Bongo (cast_start is unreliable; deploy time is outside the match window)
+## EN727   2025-01-27 00:00:01  = bongo L7 B14
 ##   cast_start (00:00) is misleading; deploy was 04:43 UTC within file range
-## HRS2601 2026-04-22 19:11:50  = aborted cast; issues with winch; redone later
+## AR88    2025-04-25 03:00:45  = bongo L4 B2
+## EN727   2025-01-26 02:16:17  = bongo L11 B6
+##
+## -- drop (not bongo)
+## -- MWT (manual assignments; not caught by containment match above)
+## AR92    2025-08-18 11:30:24  = IKMWT Tow7; missing recover in elog
 ## HRS2609 2026-08-16 03:29:08  = IKMWT
+##
+## AR99    2026-01-15 00:00:00  = bad == ring net cast?
+## HRS2601 2026-04-22 19:11:50  = aborted cast; issues with winch; redone later
+##
+## -- Expected to be auto-matched to MWT
 ## HRS2609 2026-08-18 04:11:28  = IKMWT 7 
 ## HRS2609 2026-08-18 08:06:49  = IKMWT 8 
 
-px_manual_mwt <- tibble(
-  cruise     = "AR92", cast_start = as.POSIXct("2025-08-18 11:30:24", tz = "UTC"),
-  station    = "L7", cast = "Tow7"
+# px_manual_mwt <- tibble(
+#   cruise     = "AR92", cast_start = as.POSIXct("2025-08-18 11:30:24", tz = "UTC"),
+#   station    = "L7", cast = "Tow7"
+# )
+px_manual_mwt <- tribble(
+  ~cruise,   ~cast_start,                                   ~station, ~cast,
+  "AR92",    as.POSIXct("2025-08-18 11:30:24", tz = "UTC"), "L7",     "Tow7",
+  "HRS2609", as.POSIXct("2026-08-16 03:29:08", tz = "UTC"), "L6",     "006" 
 )
 
 px_manual_bongo <- tribble(
@@ -396,11 +412,38 @@ px_manual_bongo <- tribble(
   "EN727", as.POSIXct("2025-01-26 02:16:17", tz = "UTC"), "L11",  "B6",  as.POSIXct("2025-01-26 05:01:30", tz = "UTC"), as.POSIXct("2025-01-26 05:29:41", tz = "UTC")
 )
 
-## build final bongo metadata: auto-matched + manual bongo
+px_manual_exclude <- tribble(
+  ~cruise,   ~cast_start,                                   ~reason,
+  "AR99",    as.POSIXct("2026-01-15 00:00:00", tz = "UTC"), "bad cast; possibly ring net",
+  "HRS2601", as.POSIXct("2026-04-22 19:11:50", tz = "UTC"), "aborted; winch issues; redone later"
+)
+
+px_mwt_final <- bind_rows(
+  px_mwt,
+  px_manual_mwt %>% anti_join(px_mwt, by = c("cruise", "cast_start"))
+) %>%
+  mutate(instrument = "MWT")
+
+## final bongo metadata: auto-matched + manual (no duplicates)
 px_bongo_cast_meta_final <- bind_rows(
   px_cast_meta,
-  px_manual_bongo
+  px_manual_bongo %>% anti_join(px_cast_meta, by = c("cruise", "cast_start"))
 )
+
+## build final bongo metadata: auto-matched + manual bongo
+# px_bongo_cast_meta_final <- bind_rows(
+#   px_cast_meta,
+#   px_manual_bongo
+# )
+
+## px data with excluded and MWT casts removed (bongo-only)
+px_data_bongo <- px_data %>%
+  anti_join(px_manual_exclude, by = c("cruise", "cast_start")) %>%
+  anti_join(px_mwt_final,      by = c("cruise", "cast_start"))
+
+## ---- sanity checks ----
+px_mwt %>% filter(cruise == "HRS2609")   # expect the 08-18 04:11 and 08:06 casts
+px_bongo_cast_meta_final %>% count(cruise, cast_start) %>% filter(n > 1)   # expect 0 rows
 
 ## ------------------------------------------ ##
 ##  Filter to bongo only + add metadata     ----

@@ -1134,11 +1134,9 @@ all_data <- all_data %>%
 # using times from bongo log sheets
 
 # created in nes-lter-tow-meta-v3.Rproj; 03_bongo_logs_merge.R
-# meta <- read_csv(file.path("data", "raw",
-#                            "nes-lter-bongologs-AR99-20260811.csv"))
 meta <- readRDS(file.path("data", "raw",
                            "tow-meta-v3-intermediate-HRS2609-20260918.rds"))
- 
+
 ## ------------------------------------------ ##
 ##  Parse logsheet times from meta ----
 ## ------------------------------------------ ##
@@ -1240,7 +1238,7 @@ BUFFER_SECS <- 180  # 3min buffer on each side
 
 tdr_trim <- all_data %>%
   mutate(
-    net_prefix = str_extract(cast, "^[BR]"),     # "B" or "R" from all_data's cast
+    net_prefix = str_extract(cast, "^[BR]"),  # "B" or "R" from all_data's cast
     cast_join  = str_remove(cast, "^[BR]")
   ) %>%
   left_join(
@@ -1257,19 +1255,6 @@ tdr_trim <- all_data %>%
          date_time <= meta_recover + BUFFER_SECS)
   ) %>%
   select(-meta_deploy, -meta_recover, -cast_join, -net_prefix)
-# 
-# tdr_trim <- all_data %>%
-#   mutate(cast_join = str_remove(cast, "^[BR]")) %>%   # B1 -> 1, R19 -> 19
-#   left_join(meta_times, by = c("cruise", "station", "cast_join" = "cast")) %>%
-#   filter(
-#     grepl("^R", cast) |          # ring nets: skip trim, no logsheet times
-#     is.na(meta_deploy) |
-#       (is.na(meta_recover) &
-#          date_time >= meta_deploy - BUFFER_SECS) |
-#       (date_time >= meta_deploy  - BUFFER_SECS &
-#          date_time <= meta_recover + BUFFER_SECS)
-#   ) %>%
-#   select(-meta_deploy, -meta_recover, -cast_join)
 
 ## --- flag casts that need manual review (deploy only, no recover time) ---
 cruises_with_tdr <- all_data %>%
@@ -1359,9 +1344,12 @@ manual_fixes <- tribble(
   "EN617",  "MVCO",   "B35", "end",     "2018-07-25 01:46:18",
   "EN657",  "MVCO",   "B20", "end",     "2020-10-18 02:11:36",
   "AE2426", "L1",     "B1",  "end",     "2024-11-06 17:17:06",
+  "HRS2601", "L1",    "B19", "start",   "2026-04-27 03:19:00",
+  "HRS2601", "L1",    "B19", "end",     "2026-04-27 03:25:00",
   "HRS2601", "L3",    "B11", "end",     "2026-04-26 02:57:00",
-  "HRS2601","MVCO",   "B20", "end",     "2026-04-27 06:04:00",
-  "HRS2609", "L1",    "B1"
+  "HRS2609", "L1",    "B1",  "start",   "2026-08-14 16:23:00",
+  "HRS2609", "L1",    "B1",  "end",     "2026-08-14 16:28:01",
+  "HRS2609", "L7",    "B17", "end",     "2026-08-17 19:09:00"
 ) %>%
   mutate(fix_time = as.POSIXct(fix_time, tz = "UTC"))
 
