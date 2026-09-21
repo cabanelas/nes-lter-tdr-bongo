@@ -8,13 +8,18 @@
 ##           For casts where TDR was attached to CTD (bench tests),
 ##           get CTD max depth from NES-LTER API and compare to TDR max depth 
 ##
-##  Input:  data/processed/tdr_data_no_offset_Sys.Date.RDS
-##          data/processed/tdr_ctd_tests.csv                (from 02_tdr_tidy.R)
-##          data/raw/tdr_offsets.csv  
-##   ##!!need to update       data/raw/nes-lter-bongologs-AR99-20260811.csv
-##                      (from nes-lter-tow-meta-v3.Rproj; 03_bongo_logs_merge.R)
-##          data/processed/px_data_bongo_DATE.RDS     (from 02_px_sensor_tidy.R)
-##          data/processed/ctd_bongo_data_DATE.RDS    (from 02_ctd_bongo_tidy.R)
+##  Input:  data/processed/
+##            tdr_data_no_offset_Sys.Date.RDS
+##            tdr_ctd_tests.csv                (from 02_tdr_tidy.R)
+##            px_data_bongo_DATE.RDS     (from 02_px_sensor_tidy.R)
+##            ctd_bongo_data_DATE.RDS    (from 02_ctd_bongo_tidy.R)
+##
+##          data/raw/
+##            tdr_offsets.csv  
+##            tow-meta-v3-intermediate-HRS2609-20260918.rds
+##             (previously named nes-lter-bongologs-CRUISE-YYYYMMDD.csv)
+##                      from nes-lter-tow-meta-v3.Rproj; 03_bongo_logs_merge.R
+##
 ##  NES-LTER API 2
 ##    https://github.com/WHOIGit/nes-lter-api-2/wiki
 ##    https://nes-lter-api.whoi.edu/api/docs#/
@@ -59,8 +64,9 @@ offsets <- read_csv(here("data", "raw", "tdr_offsets.csv")) %>%
 # this was created a while ago; manually based on logsheet notes
 
 # created in nes-lter-tow-meta-v3.Rproj; 03_bongo_logs_merge.R
-meta <- read_csv(file.path("data", "raw",
-                           "nes-lter-bongologs-AR99-20260811.csv"))
+# formerly nes-lter-bongologs-AR99-20260811.csv
+meta <- readRDS(file.path("data", "raw",
+                          "tow-meta-v3-intermediate-HRS2609-20260918.rds"))
 
 ## ------------------------------------------ ##
 ##  1. CTD-TDR bench tests 
@@ -202,8 +208,7 @@ bench_test_offsets %>%
   geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray50") +
   geom_point(aes(color = cruise), size = 3) +
   geom_text(nudge_y = 2, size = 3, check_overlap = TRUE) +
-  labs(
-    title = "bench test casts",
+  labs(title = "bench test casts",
     x = "CTD max depth (m)", y = "TDR max depth (m)",
     color = "cruise"
   ) +
@@ -233,11 +238,14 @@ px_maxdepth <- px_data_bongo %>%
   summarise(px_max_depth_m = max(depth_m, na.rm = TRUE), .groups = "drop")
 
 ## AR99 L11 B9: PX sensor did not record; PX sensor logsheet max depth ~199m
+## HRS2609 L1 B1: PX cast deleted as bad; max depth 13.4m
 px_maxdepth <- px_maxdepth %>%
   bind_rows(
     tibble(
-      cruise = "AR99", station = "L11", cast = "B9",
-      px_max_depth_m = 199
+      cruise = c("AR99", "HRS2609"),
+      station = c("L11", "L1"),
+      cast = c("B9", "B1"),
+      px_max_depth_m = c(199, 13.4)
     )
   )
 
@@ -544,7 +552,7 @@ walk(unique(offsets3_candidates$cruise), function(cr) {
       vjust = -0.5, hjust = -0.8, size = 3.8, color = "tomato"
     ) +
     geom_hline(yintercept = 0, linetype = "dashed", color = "gray60") +
-    scale_y_reverse(limits = c(20, -5)) +
+    scale_y_reverse(limits = c(20, -8)) +
     facet_wrap(~ paste(station, cast), scales = "free_x") +
     labs(
       title = paste(cr),
@@ -665,7 +673,8 @@ rm(offsets1, offsets2, offsets3)
 # 2025 = AR95    = 5.3m (surf -5.1 to -5.3)
 ##
 # 2026 = AR99    = 5.9m (surf -5.6 to -6)
-# 2026 = ***need to add HRS2601***
+# 2026 = HRS2601 = 6m
+# 2026 = HRS2909 = 6.5m
 
 ## ------------------------------------------ ##
 ##  TDR offsets comments in meta
@@ -701,7 +710,9 @@ cast_overrides <- tribble(
   "EN706",   "L4",   "B5",  -19.0,
   "EN706",   "L5",   "B6",  -19.0,
   # HRS2303 — L2 has no TDR data (drop)
-  "HRS2303", "L2",   "B12",   NA
+  "HRS2303", "L2",   "B12",   NA,
+  # HRS2601 L7 B10 has no TDR data (drop)
+  "HRS2601", "L7", "B10", NA
 )
 
 cruise_offsets <- tribble(
@@ -731,15 +742,34 @@ cruise_offsets <- tribble(
   "HRS2609",   6.5
 )
 
+# offsets_final <- offsets_draft %>%
+#   left_join(cruise_offsets, by = "cruise") %>%
+#   left_join(
+#     cast_overrides %>% rename(offset_override = offset_m),
+#     by = c("cruise", "station", "cast")
+#   ) %>%
+#   mutate(offset_m = coalesce(offset_override, offset_m)) %>%
+#   select(-offset_override) %>%
+#   filter(!is.na(offset_m)) %>%   # drops AT46 L8, HRS2303 L2
+#   select(cruise, station, cast,
+#          offset_m,
+#          tdr_max_depth_m, px_max_depth_m,
+#          ctd_bongo_max_depth_m, tdr_min_depth_m,
+#          depth_bottom, depth_target) %>%
+#   arrange(cruise, station, cast)
+
 offsets_final <- offsets_draft %>%
   left_join(cruise_offsets, by = "cruise") %>%
   left_join(
-    cast_overrides %>% rename(offset_override = offset_m),
+    cast_overrides %>%
+      rename(offset_override = offset_m) %>%
+      mutate(has_override = TRUE),
     by = c("cruise", "station", "cast")
   ) %>%
-  mutate(offset_m = coalesce(offset_override, offset_m)) %>%
-  select(-offset_override) %>%
-  filter(!is.na(offset_m)) %>%   # drops AT46 L8, HRS2303 L2
+  mutate(offset_m = if_else(!is.na(has_override), 
+                            offset_override, offset_m)) %>%
+  select(-offset_override, -has_override) %>%
+  filter(!is.na(offset_m)) %>% # drops AT46 L8, HRS2303 L2
   select(cruise, station, cast,
          offset_m,
          tdr_max_depth_m, px_max_depth_m,

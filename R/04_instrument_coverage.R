@@ -8,10 +8,13 @@
 ##           across TDR, CTD, and PX sensor data, and
 ##           produce a coverage heatmap and summary plots.
 ##
-##  Input:   data/processed/tdr_data_no_offset.csv     (02_tdr_tidy.R)
-##           data/processed/ctd_bongo_data.csv         (02_ctd_bongo_tidy.R)
-##           data/processed/px_data_bongo.csv          (02_px_sensor_tidy.R)
-##           data/raw/all-nes-lter-bongologs-20260526.csv
+##  Input:   data/processed/
+##              tdr_data_no_offset.csv     (02_tdr_tidy.R)
+##              ctd_bongo_data.csv         (02_ctd_bongo_tidy.R)
+##              px_data_bongo.csv          (02_px_sensor_tidy.R)
+##           data/raw/tow-meta-v3-intermediate-HRS2609-20260918.rds
+##             (previously named nes-lter-bongologs-CRUISE-YYYYMMDD.csv)
+##                from nes-lter-tow-meta-v3.Rproj; 03_bongo_logs_merge.R
 ##
 ##  Output:  data/processed/nes_lter_bongo_instrument_coverage.csv
 ##           figures/instrument_coverage_heatmap.pdf
@@ -26,6 +29,8 @@
 ## AR99 L2  B3:   px max 7m,   logsheet target 39m
 ## AR99 L9  B5:   px max 14m,  logsheet target 200m
 ## EN727 L9 B11:  px max 21m,  logsheet target ~200m
+## HRS2609 L1 B1: px max 13.4, likely a good depth, the px profile was just bad
+## AR99 L11     : px didnt record; max depth 199m
 
 ## ------------------------------------------ ##
 ##  Packages                   ----
@@ -58,15 +63,16 @@ px <- readRDS(px_file)
 ##  Full tow metadata    ----
 ## ------------------------------------------ ##
 ## Options:
-##   (a) all-nes-lter-bongologs CSV
+##   (a) nes-lter-tow-meta-v3.Rproj bongo logs
 ##   (b) the EDI zooplankton abundance package cast inventory
 ## one row per cruise/station/cast that actually had a bongo tow,
 ## regardless of whether instrument data exists
 
 ## --- bongo logsheets for tow meta ---
-all_tows <- read_csv(here("data", "raw",
-                          "all-nes-lter-bongologs-20260526.csv"), 
-                     show_col_types = FALSE) %>%
+# created in nes-lter-tow-meta-v3.Rproj; 03_bongo_logs_merge.R
+# formerly nes-lter-bongologs-AR99-20260811.csv;all-nes-lter-bongologs-20260526.csv
+all_tows <- readRDS(file.path("data", "raw",
+                          "tow-meta-v3-intermediate-HRS2609-20260918.rds")) %>%
   mutate(cast = paste0("B", cast)) %>%
   filter(!is.na(datetime_UTC_start)) %>%
   filter(!(cruise == "EN617" & station == "L11" & cast %in% c("B25A", "B25B"))) %>% 
@@ -153,7 +159,7 @@ coverage %>%
 coverage %>%
   count(px_status)  %>% print()
 
-# stations that get sampled more than once within a cruise
+# stations that got sampled more than once within a cruise
 coverage %>%
   group_by(cruise, station) %>%
   filter(n() > 1) %>%
@@ -191,7 +197,7 @@ cruise_levels <- c(
   "AT46","EN687","EN695",
   "HRS2303","EN706","AR77",
   "EN712","EN715","EN720","AE2426",
-  "EN727","AR88","AR92","AR95","AR99"
+  "EN727","AR88","AR92","AR95","AR99", "HRS2601", "HRS2609"
 )
 
 ## ------------------------------------------ ##
@@ -350,8 +356,10 @@ dev.off()
 ##  1b. Heatmap add years to y axis  ----
 ## ------------------------------------------ ##
 ## year lookup for faceting (order still comes from cruise_levels above)
-cruise_years <- read_csv(here("data", "raw", "all-nes-lter-bongologs-20260526.csv"),
-                         show_col_types = FALSE) %>%
+# created in nes-lter-tow-meta-v3.Rproj; 03_bongo_logs_merge.R
+# formerly nes-lter-bongologs-AR99-20260811.csv
+cruise_years <- readRDS(file.path("data", "raw",
+                        "tow-meta-v3-intermediate-HRS2609-20260918.rds")) %>%
   filter(cruise %in% cruise_levels) %>%
   group_by(cruise) %>%
   summarize(year = year(min(datetime_UTC_start, na.rm = TRUE)), .groups = "drop")
