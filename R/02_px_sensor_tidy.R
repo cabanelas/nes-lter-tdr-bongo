@@ -47,7 +47,8 @@
 # HRS2609 L2, L3, L4, L5, L6, L7, L8, L9, L10, L11
   
 ## AR99 L11 B9: PX sensor did not record; PX sensor logsheet max depth ~199m
-
+## AE2426 L2 B4: no PX sensor used (logsheet); elog deploy 2024-11-07 09:20-09:30
+##               px data only for L2 B19 (station sampled twice)
 ## ------------------------------------------ ##
 ##  Packages               ----
 ## ------------------------------------------ ##
@@ -396,16 +397,6 @@ rm(elog_mwt_window, truly_unmatched)
 ## HRS2609 2026-08-18 04:11:28  = IKMWT 7 
 ## HRS2609 2026-08-18 08:06:49  = IKMWT 8 
 
-# px_manual_mwt <- tibble(
-#   cruise     = "AR92", cast_start = as.POSIXct("2025-08-18 11:30:24", tz = "UTC"),
-#   station    = "L7", cast = "Tow7"
-# )
-px_manual_mwt <- tribble(
-  ~cruise,   ~cast_start,                                   ~station, ~cast,
-  "AR92",    as.POSIXct("2025-08-18 11:30:24", tz = "UTC"), "L7",     "Tow7",
-  "HRS2609", as.POSIXct("2026-08-16 03:29:08", tz = "UTC"), "L6",     "006" 
-)
-
 px_manual_bongo <- tribble(
   ~cruise, ~cast_start,                                 ~station, ~cast, ~elog_deploy,                                 ~elog_recover,
   "EN727", as.POSIXct("2025-01-27 00:00:01", tz = "UTC"), "L7",   "B14", as.POSIXct("2025-01-27 04:43:44", tz = "UTC"), as.POSIXct("2025-01-27 05:00:52", tz = "UTC"),
@@ -413,17 +404,18 @@ px_manual_bongo <- tribble(
   "EN727", as.POSIXct("2025-01-26 02:16:17", tz = "UTC"), "L11",  "B6",  as.POSIXct("2025-01-26 05:01:30", tz = "UTC"), as.POSIXct("2025-01-26 05:29:41", tz = "UTC")
 )
 
-px_manual_exclude <- tribble(
+px_manual_drop <- tribble(
   ~cruise,   ~cast_start,                                   ~reason,
-  "AR99",    as.POSIXct("2026-01-15 00:00:00", tz = "UTC"), "bad cast; possibly ring net",
+  "AR92",    as.POSIXct("2025-08-18 11:30:24", tz = "UTC"), "IKMWT Tow7; missing recover in elog",
+  "HRS2609", as.POSIXct("2026-08-16 03:29:08", tz = "UTC"), "IKMWT; not bongo",
+  "AR99",    as.POSIXct("2026-01-15 00:00:00", tz = "UTC"), "bad file; possibly ring net",
   "HRS2601", as.POSIXct("2026-04-22 19:11:50", tz = "UTC"), "aborted; winch issues; redone later"
 )
 
-px_mwt_final <- bind_rows(
-  px_mwt,
-  px_manual_mwt %>% anti_join(px_mwt, by = c("cruise", "cast_start"))
-) %>%
-  mutate(instrument = "MWT")
+## AR88 / EN727 01-26 were also caught by the MWT containment match;
+## they are bongo, so take them out of the MWT list
+px_mwt <- px_mwt %>%
+  anti_join(px_manual_bongo, by = c("cruise", "cast_start"))
 
 ## final bongo metadata: auto-matched + manual (no duplicates)
 px_bongo_cast_meta_final <- bind_rows(
@@ -431,28 +423,17 @@ px_bongo_cast_meta_final <- bind_rows(
   px_manual_bongo %>% anti_join(px_cast_meta, by = c("cruise", "cast_start"))
 )
 
-## build final bongo metadata: auto-matched + manual bongo
-# px_bongo_cast_meta_final <- bind_rows(
-#   px_cast_meta,
-#   px_manual_bongo
-# )
-
-## px data with excluded and MWT casts removed (bongo-only)
-px_data_bongo <- px_data %>%
-  anti_join(px_manual_exclude, by = c("cruise", "cast_start")) %>%
-  anti_join(px_mwt_final,      by = c("cruise", "cast_start"))
-
 ## ---- sanity checks ----
 px_mwt %>% filter(cruise == "HRS2609")   # expect the 08-18 04:11 and 08:06 casts
-px_bongo_cast_meta_final %>% count(cruise, cast_start) %>% filter(n > 1)   # expect 0 rows
+px_bongo_cast_meta_final %>% count(cruise, cast_start) %>% filter(n > 1) # expect 0 rows
 
 ## ------------------------------------------ ##
 ##  Filter to bongo only + add metadata     ----
 ## ------------------------------------------ ##
 px_data_bongo <- px_data %>%
   ## drop AR99 bad file
-  filter(!(cruise == "AR99" & cast_start == as.POSIXct("2026-01-15 00:00:00", 
-                                                       tz = "UTC"))) %>%
+  # filter(!(cruise == "AR99" & cast_start == as.POSIXct("2026-01-15 00:00:00", 
+  #                                                      tz = "UTC"))) %>%
   ## keep only bongo cast_starts
   semi_join(px_bongo_cast_meta_final, by = c("cruise", "cast_start")) %>%
   ## add station/cast/elog times
@@ -466,11 +447,11 @@ cat("Total px cast_starts:      ", n_distinct(paste(px_data$cruise, px_data$cast
 cat("Matched to bongo (auto):   ", nrow(px_cast_meta), "\n")
 cat("Matched to bongo (manual): ", nrow(px_manual_bongo), "\n")
 cat("Matched to MWT (auto):     ", nrow(px_mwt), "\n")
-cat("Matched to MWT (manual):   ", nrow(px_manual_mwt), "\n")
+cat("Dropped (manual):          ", nrow(px_manual_drop), "\n")
 cat("px_data_bongo rows:        ", nrow(px_data_bongo), "\n")
 cat("unique bongo casts:         ", n_distinct(paste(px_data_bongo$cruise, px_data_bongo$cast)), "\n")
 
-rm(px_mwt, px_manual_mwt, px_manual_bongo)
+rm(px_mwt, px_manual_bongo, px_manual_drop)
 
 ## ------------------------------------------ ##
 ##   Plot all casts --- 
@@ -702,8 +683,9 @@ px_data_bongo2 <- px_data_bongo2 %>%
 ## ------------------------------------------ ##
 ## EN727  L8 B10: deep noise before 19:30:05, real cast 19:30:05-19:44:27
 ## EN727  L5 B19: deep noise before 20:35:09, real cast 20:35:09-20:43:53
-# HRS2601 L10 B3: trim end at 2026-04-24 06:49:30
-# HRS2609 L2 B2 : trim end at 2026-08-15 04:45:39
+## HRS2601 L10 B3: trim end at 2026-04-24 06:49:30
+## HRS2601 L9 B7 : trim before 2026-04-24 22:38:28 (just some noise) 
+## HRS2609 L2 B2 : trim end at 2026-08-15 04:45:39
 
 px_data_bongo2 <- px_data_bongo2 %>%
   mutate(date_time = date_time) %>%
@@ -714,6 +696,8 @@ px_data_bongo2 <- px_data_bongo2 %>%
         date_time < as.POSIXct("2025-01-27 20:35:09", tz = "UTC")),
     !(cruise == "HRS2601" & station == "L10" & cast == "B3" &
         date_time > as.POSIXct("2026-04-24 06:49:30", tz = "UTC")),
+    !(cruise == "HRS2601" & station == "L9" & cast == "B7" &
+        date_time < as.POSIXct("2026-04-24 22:38:29", tz = "UTC")),
     !(cruise == "HRS2609" & station == "L2" & cast == "B2" &
         date_time > as.POSIXct("2026-08-15 04:45:39", tz = "UTC"))
   )
@@ -721,9 +705,9 @@ px_data_bongo2 <- px_data_bongo2 %>%
 ## verify
 px_data_bongo2 %>%
   filter(
-    (cruise == "EN727"   & station %in% c("L8", "L5")   & cast %in% c("B10", "B19")) |
-      (cruise == "HRS2601" & station == "L10"              & cast == "B3") |
-      (cruise == "HRS2609" & station == "L2"                & cast == "B2")
+    (cruise == "EN727"   & station %in% c("L8", "L5")  & cast %in% c("B10", "B19")) |
+    (cruise == "HRS2601" & station %in% c("L10", "L9") & cast %in% c("B3", "B7")) |
+    (cruise == "HRS2609" & station == "L2"             & cast == "B2")
   ) %>%
   group_by(cruise, station, cast) %>%
   summarise(start = min(date_time), end = max(date_time),
@@ -819,8 +803,8 @@ px_cast_notes <- tribble(
   "EN727",  "L6",     "B17",  "early_end", "Upcast ends at ~40m; sensor stopped recording before recovery",
   "HRS2601","L2",     "B15",  "early_end", "Upcast ends at ~35m; sensor stopped recording before recovery",
   "HRS2601","L3",     "B11",  "early_end", "Upcast ends at ~37m; sensor stopped recording before recovery",
-  "HRS2601","L6",     "B8",  "early_end", "Upcast ends at ~81m; sensor stopped recording before recovery",
-  "HRS2601","L9",     "B7",  "early_end", "Upcast ends at ~100m; sensor stopped recording before recovery"
+  "HRS2601","L6",     "B8",   "early_end", "Upcast ends at ~81m; sensor stopped recording before recovery",
+  "HRS2601","L9",     "B7",   "early_end", "Upcast ends at ~100m; sensor stopped recording before recovery"
   )
 
 px_data_bongo_final <- px_data_bongo_final %>%
@@ -977,9 +961,8 @@ rm(temp_jumps_px)
 
 ## max depth vs logsheet target
 # need meta loaded for this
-meta <- read_csv(file.path("data", "raw",
-                              "nes-lter-bongologs-AR99-20260811.csv"),
-                    show_col_types = FALSE) %>%
+meta <- readRDS(file.path("data", "raw",
+                           "tow-meta-v3-intermediate-HRS2609-20260918.rds")) %>%
   filter(cruise %in% unique(px_data_bongo_final$cruise),
          net_type != "ring") %>%
   mutate(cast = paste0("B", cast))
@@ -1100,6 +1083,6 @@ tibble(column = names(px_data_bongo_final)) %>%
 
 ################################################################################
 # go to -----------> 03_tdr_offsets.R
-#           OR     > 02_px_sensor_tidy.R
+#           OR     > 02_tdr_tidy.R
 #           OR     > 02_ctd_bongo_tidy.R 
 ################################################################################
