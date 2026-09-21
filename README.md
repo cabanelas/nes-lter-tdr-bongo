@@ -30,8 +30,8 @@ data/
 │   ├── tdr_data/             raw TDR files per cruise (CSV/XLSX/DAT)
 │   ├── ctd_bongo/            raw SeaBird CNV files (EN668, EN706)
 │   ├── px_sensor/            raw PX sensor CSVs and telemetry XMLs per cruise
-│   ├── all-nes-lter-bongologs-YYYYMMDD.csv   bongo logsheet metadata
-│   ├── elog_zoop_tows_thruXXXX.csv           shipboard event log data for bongos
+│   ├── tow-meta-v3-intermediate-CRUISE-YYYYMMDD.rds  bongo logsheet metadata
+│   ├── elog_zoop_tows_thruCRUISE_YYYY-MM-DD.csv      shipboard event log data for bongos
 │   └── tdr_offsets.csv       manually curated TDR offset notes (input to 03_tdr_offsets.R)
 └── processed/
     ├── nes-lter-bongo-tdr.csv
