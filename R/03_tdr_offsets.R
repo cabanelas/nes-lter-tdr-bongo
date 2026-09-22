@@ -237,18 +237,32 @@ px_maxdepth <- px_data_bongo %>%
   group_by(cruise, station, cast) %>%
   summarise(px_max_depth_m = max(depth_m, na.rm = TRUE), .groups = "drop")
 
-## AR99 L11 B9: PX sensor did not record; PX sensor logsheet max depth ~199m
+# px_maxdepth <- px_maxdepth %>%
+#   bind_rows(
+#     tibble(
+#       cruise = c("AR99", "HRS2609"),
+#       station = c("L11", "L1"),
+#       cast = c("B9", "B1"),
+#       px_max_depth_m = c(199, 13.4)
+#     )
+#   )
+## PX casts where sensor data was deleted (looked bad) but max depth was
+## still recorded/known -> add back manually
+## AR99 L11 B9:  PX sensor did not record; PX sensor logsheet max depth ~199m
 ## HRS2609 L1 B1: PX cast deleted as bad; max depth 13.4m
+## EN727 L9 B11: PX deleted, depth written = 200m
+## AR99 L2 B3:   PX deleted, depth written = 44m
+## AR99 L9 B5:   PX deleted, depth written = 205m
+## AR95 L6 B11:  PX deleted, depth written = 91m
 px_maxdepth <- px_maxdepth %>%
   bind_rows(
     tibble(
-      cruise = c("AR99", "HRS2609"),
-      station = c("L11", "L1"),
-      cast = c("B9", "B1"),
-      px_max_depth_m = c(199, 13.4)
+      cruise         = c("AR99", "HRS2609", "EN727", "AR99", "AR99", "AR95"),
+      station        = c("L11",  "L1",      "L9",    "L2",   "L9",   "L6"),
+      cast           = c("B9",   "B1",      "B11",   "B3",   "B5",   "B11"),
+      px_max_depth_m = c(199,    13.4,      200,     44,     205,    91)
     )
   )
-
 rm(px_file)
 
 ## ------------------------------------------ ##
