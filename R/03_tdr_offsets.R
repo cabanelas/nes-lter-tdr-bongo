@@ -237,15 +237,6 @@ px_maxdepth <- px_data_bongo %>%
   group_by(cruise, station, cast) %>%
   summarise(px_max_depth_m = max(depth_m, na.rm = TRUE), .groups = "drop")
 
-# px_maxdepth <- px_maxdepth %>%
-#   bind_rows(
-#     tibble(
-#       cruise = c("AR99", "HRS2609"),
-#       station = c("L11", "L1"),
-#       cast = c("B9", "B1"),
-#       px_max_depth_m = c(199, 13.4)
-#     )
-#   )
 ## PX casts where sensor data was deleted (looked bad) but max depth was
 ## still recorded/known -> add back manually
 ## AR99 L11 B9:  PX sensor did not record; PX sensor logsheet max depth ~199m
@@ -725,7 +716,7 @@ cast_overrides <- tribble(
   "EN706",   "L5",   "B6",  -19.0,
   # HRS2303 — L2 has no TDR data (drop)
   "HRS2303", "L2",   "B12",   NA,
-  # HRS2601 L7 B10 has no TDR data (drop)
+  # HRS2601 L7 B10 has no TDR data; kept for PX depth 117m, offset_m stays NA
   "HRS2601", "L7", "B10", NA
 )
 
@@ -756,22 +747,6 @@ cruise_offsets <- tribble(
   "HRS2609",   6.5
 )
 
-# offsets_final <- offsets_draft %>%
-#   left_join(cruise_offsets, by = "cruise") %>%
-#   left_join(
-#     cast_overrides %>% rename(offset_override = offset_m),
-#     by = c("cruise", "station", "cast")
-#   ) %>%
-#   mutate(offset_m = coalesce(offset_override, offset_m)) %>%
-#   select(-offset_override) %>%
-#   filter(!is.na(offset_m)) %>%   # drops AT46 L8, HRS2303 L2
-#   select(cruise, station, cast,
-#          offset_m,
-#          tdr_max_depth_m, px_max_depth_m,
-#          ctd_bongo_max_depth_m, tdr_min_depth_m,
-#          depth_bottom, depth_target) %>%
-#   arrange(cruise, station, cast)
-
 offsets_final <- offsets_draft %>%
   left_join(cruise_offsets, by = "cruise") %>%
   left_join(
@@ -783,7 +758,9 @@ offsets_final <- offsets_draft %>%
   mutate(offset_m = if_else(!is.na(has_override), 
                             offset_override, offset_m)) %>%
   select(-offset_override, -has_override) %>%
-  filter(!is.na(offset_m)) %>% # drops AT46 L8, HRS2303 L2
+  # drops AT46 L8, HRS2303 L2
+  # only drop rows with NOTHING usable at all (no offset AND no px AND no ctd)
+  filter(!(is.na(offset_m) & is.na(px_max_depth_m) & is.na(ctd_bongo_max_depth_m))) %>%
   select(cruise, station, cast,
          offset_m,
          tdr_max_depth_m, px_max_depth_m,
@@ -834,6 +811,7 @@ offsets_final %>%
   theme_minimal()
 
 offsets_final %>%
+  filter(!is.na(offset_m)) %>%
   distinct(cruise, offset_m) %>%
   mutate(cruise = fct_reorder(cruise, offset_m)) %>%
   ggplot(aes(x = cruise, y = offset_m, fill = offset_m > 0)) +
@@ -852,6 +830,7 @@ tdr_serials_cruise <- tdr_data %>%
   select(cruise, serial_number)
 
 offsets_final %>%
+  filter(!is.na(offset_m)) %>%
   distinct(cruise, offset_m) %>%
   left_join(tdr_serials_cruise, by = "cruise") %>%
   left_join(tdr_data %>% group_by(cruise) %>% 
